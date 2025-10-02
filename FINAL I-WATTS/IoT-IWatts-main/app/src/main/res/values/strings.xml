@@ -1,0 +1,163 @@
+<resources>
+    <string name="app_name">I-WATTS-FirstDraft</string>
+    <string name="text1">Your I-WATTS dashboard anywhere you go</string>
+    <string name="text2">Before you start, connect your I-WATTS device to begin monitoring power in real-time.</string>
+    <string name="text3">SEARCH DEVICE</string>
+    <string name="text4">Scanning for Devices</string>
+    <string name="text5">Looking for nearby I-WATTS devices…</string>
+    <string name="text6">This may take a moment. Please keep the app open.</string>
+    <string name="text7">DEVICE FOUND!</string>
+    <string name="text8">CONNECT</string>
+    <string name="text9">SCAN AGAIN</string>
+    <string name="text10">ENTER DEVICE PASSWORD</string>
+    <string name="text11">CONNECTION SUCCESSFUL!</string>
+    <string name="text12">Main  Consumption</string>
+    <string name="text13">0</string>
+    <string name="text14">Today\'s consumption: 0 kWh</string>
+    <string name="text15">00:00:00 AM</string>
+    <string name="text16">Area 1</string>
+    <string name="text17">Area 2</string>
+    <string name="text18">Area 3</string>
+    <string name="text19">0 w</string>
+    <string name="text20">0% of total</string>
+    <string name="text21">Estimated Total Cost</string>
+    <string name="text22">₱</string>
+    <string name="text23">BATELEC II Rate:</string>
+    <string name="text24">x</string>
+    <string name="text25">I-WATTS Device Battery Life</string>
+    <string name="text26">Peak Usage Analysis</string>
+    <string name="text27">Peak Time </string>
+    <string name="text28">Peak Value</string>
+    <string name="text29">0%</string>
+    <string name="text30">day, mm/dd</string>
+    <string name="text31">Real-Time Monitoring</string>
+    <string name="text32">Daily Consumption Summary</string>
+    <string name="text33">Today\'s Total</string>
+    <string name="text34">0 kWh</string>
+    <string name="text35">vs. previous day</string>
+    <string name="text36">Peak Usage</string>
+    <string name="text37">Estimated Cost</string>
+    <string name="text38">Total Consumption</string>
+    <string name="text39">Peak Consumption</string>
+    <string name="text40">Share of Total</string>
+    <string name="text41">Historical Analysis</string>
+    <string name="text42">Start Date</string>
+    <string name="text43">End Date</string>
+    <string name="text44">Daily Average</string>
+    <string name="text45">Total Cost</string>
+    <string name="text46">0% vs previous period</string>
+    <string name="text47">Comparison with Previous Period </string>
+    <string name="text48">PREVIOUS</string>
+    <string name="text49">PRESENT</string>
+    <string name="text50">date</string>
+    <string name="text51">Area Consumption Pattern</string>
+    <string name="text52">Cost Estimation</string>
+    <string name="text53">Total Usage</string>
+    <string name="text54">Daily Cost</string>
+    <string name="text55">Daily Cost Breakdown</string>
+    <string name="text56">Area Cost Comparison</string>
+    <string name="text57">Electricity Rate</string>
+    <string name="text58">BATELEC II Rate as of</string>
+    <string name="text59">₱ / kWh</string>
+    <string name="text60">Cost Distribution by Area</string>
+    <string name="text61">For 0 kWh at ₱ / kWh</string>
+    <string name="text62">Projected Monthly:</string>
+    <string name="text63">Based on current n-day consumption pattern</string>
+    <string name="text64">Settings</string>
+    <string name="text65">Account</string>
+    <string name="text66">Notification</string>
+    <string name="text67">Tips</string>
+    <string name="text68">Alerts</string>
+    <string name="text69">Device Settings</string>
+    <string name="text70">About Us</string>
+    <string name="text71">Energy Saving</string>
+    <string name="text72">Ways to lower your power consumption.</string>
+    <string name="text73">Read Tips</string>
+    <string name="text74">Usage Monitoring</string>
+    <string name="text75">Device Maintenance</string>
+    <string name="text76">Appliance Safety</string>
+    <string name="text77">Hardware Life Efficiency</string>
+    <string name="text78">Home Optimization</string>
+    <string name="text79">Billing Awareness</string>
+    <string name="text80">Usage Analysis</string>
+    <string name="text81">Eco-Friendly Practices</string>
+    <string name="text82">Peak Hours Management</string>
+    <string name="text83">Keep track of your electricity usage.</string>
+    <string name="text84">Take care of your I-WATTS hardware unit.</string>
+    <string name="text85">Make your I-WATTS device last longer.</string>
+    <string name="text86">Use appliances wisely to prevent power surges.</string>
+    <string name="text87">Upgrade your home for smarter energy use.</string>
+    <string name="text88">Understand your bill and spot unusual charges.</string>
+    <string name="text89">Spot trends and cut down on high-usage habits.</string>
+    <string name="text90">Go green with simple energy-saving habits.</string>
+    <string name="text91">Use power wisely during high-demand times.</string>
+    <string name="text92">Turn off lights when you leave a room.</string>
+    <string name="text93">Use LED bulbs — they use less electricity.</string>
+    <string name="text94">Unplug phone chargers when not in use.</string>
+    <string name="text95">Choose appliances that use less energy.</string>
+    <string name="text96">Open curtains in the day instead of using lights.</string>
+    <string name="text97">Set your air conditioner to a comfortable, not very cold, temperature.</string>
+    <string name="text98">Wash clothes in cold water.</string>
+    <string name="text99">Let clothes dry outside instead of using a dryer.</string>
+    <string name="text100">Cook with lids on pots to keep heat in.</string>
+    <string name="text101">Clean your air conditioner filters often.</string>
+    <string name="text102">Wipe your device with a soft cloth to remove dust and dirt.</string>
+    <string name="text103">Make sure nothing blocks air vents or fans.</string>
+    <string name="text104">Look for any cracks or frays in the cord.</string>
+    <string name="text105">Plug into safe, working outlets.</string>
+    <string name="text106">Never place your device near water or in damp spots.</string>
+    <string name="text107">Place it somewhere it won’t get knocked over.</string>
+    <string name="text108">Protect it from lightning damage.</string>
+    <string name="text109">Defrost fridge/freezer parts when ice gets thick.</string>
+    <string name="text110">Don’t wait for them to get worse.</string>
+    <string name="text111">Check the manual for cleaning and care steps.</string>
+    <string name="text112">Alert Settings</string>
+    <!-- Strings used for fragments for navigation -->
+    <string name="first_fragment_label">First Fragment</string>
+    <string name="second_fragment_label">Second Fragment</string>
+    <string name="next">Next</string>
+    <string name="previous">Previous</string>
+
+    <string name="lorem_ipsum">
+        Lorem ipsum dolor sit amet, consectetur adipiscing elit. Nam in scelerisque sem. Mauris
+        volutpat, dolor id interdum ullamcorper, risus dolor egestas lectus, sit amet mattis purus
+        dui nec risus. Maecenas non sodales nisi, vel dictum dolor. Class aptent taciti sociosqu ad
+        litora torquent per conubia nostra, per inceptos himenaeos. Suspendisse blandit eleifend
+        diam, vel rutrum tellus vulputate quis. Aliquam eget libero aliquet, imperdiet nisl a,
+        ornare ex. Sed rhoncus est ut libero porta lobortis. Fusce in dictum tellus.\n\n
+        Suspendisse interdum ornare ante. Aliquam nec cursus lorem. Morbi id magna felis. Vivamus
+        egestas, est a condimentum egestas, turpis nisl iaculis ipsum, in dictum tellus dolor sed
+        neque. Morbi tellus erat, dapibus ut sem a, iaculis tincidunt dui. Interdum et malesuada
+        fames ac ante ipsum primis in faucibus. Curabitur et eros porttitor, ultricies urna vitae,
+        molestie nibh. Phasellus at commodo eros, non aliquet metus. Sed maximus nisl nec dolor
+        bibendum, vel congue leo egestas.\n\n
+        Sed interdum tortor nibh, in sagittis risus mollis quis. Curabitur mi odio, condimentum sit
+        amet auctor at, mollis non turpis. Nullam pretium libero vestibulum, finibus orci vel,
+        molestie quam. Fusce blandit tincidunt nulla, quis sollicitudin libero facilisis et. Integer
+        interdum nunc ligula, et fermentum metus hendrerit id. Vestibulum lectus felis, dictum at
+        lacinia sit amet, tristique id quam. Cras eu consequat dui. Suspendisse sodales nunc ligula,
+        in lobortis sem porta sed. Integer id ultrices magna, in luctus elit. Sed a pellentesque
+        est.\n\n
+        Aenean nunc velit, lacinia sed dolor sed, ultrices viverra nulla. Etiam a venenatis nibh.
+        Morbi laoreet, tortor sed facilisis varius, nibh orci rhoncus nulla, id elementum leo dui
+        non lorem. Nam mollis ipsum quis auctor varius. Quisque elementum eu libero sed commodo. In
+        eros nisl, imperdiet vel imperdiet et, scelerisque a mauris. Pellentesque varius ex nunc,
+        quis imperdiet eros placerat ac. Duis finibus orci et est auctor tincidunt. Sed non viverra
+        ipsum. Nunc quis augue egestas, cursus lorem at, molestie sem. Morbi a consectetur ipsum, a
+        placerat diam. Etiam vulputate dignissim convallis. Integer faucibus mauris sit amet finibus
+        convallis.\n\n
+        Phasellus in aliquet mi. Pellentesque habitant morbi tristique senectus et netus et
+        malesuada fames ac turpis egestas. In volutpat arcu ut felis sagittis, in finibus massa
+        gravida. Pellentesque id tellus orci. Integer dictum, lorem sed efficitur ullamcorper,
+        libero justo consectetur ipsum, in mollis nisl ex sed nisl. Donec maximus ullamcorper
+        sodales. Praesent bibendum rhoncus tellus nec feugiat. In a ornare nulla. Donec rhoncus
+        libero vel nunc consequat, quis tincidunt nisl eleifend. Cras bibendum enim a justo luctus
+        vestibulum. Fusce dictum libero quis erat maximus, vitae volutpat diam dignissim.
+    </string>
+
+    <!-- About Us Page Strings -->
+    <string name="about_description">I-WATTS is an innovative IoT solution that helps you monitor and manage your electricity consumption in real-time. Our smart device connects to your electrical system to provide detailed insights into your power usage, helping you save money and reduce your environmental footprint.</string>
+    <string name="about_version">Version 1.0.0</string>
+    <string name="about_copyright">© 2024 I-WATTS. All rights reserved.</string>
+
+</resources>

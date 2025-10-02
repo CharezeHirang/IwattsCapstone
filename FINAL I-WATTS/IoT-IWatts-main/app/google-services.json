@@ -1,0 +1,49 @@
+{
+  "project_info": {
+    "project_number": "740611547759",
+    "firebase_url": "https://iwatts-58d90-default-rtdb.asia-southeast1.firebasedatabase.app",
+    "project_id": "iwatts-58d90",
+    "storage_bucket": "iwatts-58d90.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:740611547759:android:baf37e069aeb1b7839239a",
+        "android_client_info": {
+          "package_name": "com.example.iwatts_firstdraft"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBbpfBStcHUb9w7Nqxm5Rrw2aOFd_W1Dpk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:740611547759:android:f5ec4e55a88bacd839239a",
+        "android_client_info": {
+          "package_name": "com.example.sampleiwatts"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBbpfBStcHUb9w7Nqxm5Rrw2aOFd_W1Dpk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

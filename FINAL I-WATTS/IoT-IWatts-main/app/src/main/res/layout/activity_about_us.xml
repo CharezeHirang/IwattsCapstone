@@ -1,0 +1,139 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/main"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/bg_light_yellow"
+    android:padding="16dp"
+    tools:context=".AboutUsActivity">
+
+    <!-- Header with back button and title -->
+    <ImageView
+        android:id="@+id/ic_back"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:src="@drawable/ic_back_arrow"
+        android:background="?attr/selectableItemBackgroundBorderless"
+        android:padding="8dp"
+        android:contentDescription="Back to settings"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        android:layout_marginTop="16dp"
+        android:layout_marginStart="8dp"/>
+
+    <TextView
+        android:id="@+id/tv_about_title"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="About"
+        android:textSize="24sp"
+        android:textStyle="bold"
+        android:textColor="#863B17"
+        android:layout_marginStart="16dp"
+        app:layout_constraintTop_toTopOf="@id/ic_back"
+        app:layout_constraintStart_toEndOf="@id/ic_back"
+        app:layout_constraintBottom_toBottomOf="@id/ic_back"/>
+
+    <!-- iWatts Logo -->
+    <ImageView
+        android:id="@+id/iv_logo"
+        android:layout_width="220dp"
+        android:layout_height="wrap_content"
+        android:adjustViewBounds="true"
+        android:src="@drawable/img_iwatts_logo"
+        android:scaleType="fitCenter"
+        android:contentDescription="iWatts Logo"
+        app:layout_constraintTop_toBottomOf="@id/tv_about_title"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        android:layout_marginTop="40dp"/>
+
+    <!-- Combined Description and Features Container -->
+    <androidx.cardview.widget.CardView
+        android:id="@+id/cv_content"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        app:cardCornerRadius="16dp"
+        app:cardElevation="8dp"
+        app:cardBackgroundColor="#FEF9E7"
+        android:padding="24dp"
+        app:layout_constraintTop_toBottomOf="@id/iv_logo"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        android:layout_marginTop="30dp"
+        android:layout_marginStart="32dp"
+        android:layout_marginEnd="32dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="20dp">
+
+            <!-- Description -->
+            <TextView
+                android:id="@+id/tv_description"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/about_description"
+                android:textSize="16sp"
+                android:textColor="#863B17"
+                android:lineSpacingExtra="4dp"
+                android:gravity="center"
+                android:layout_marginBottom="20dp" />
+
+            <!-- Main Features Title -->
+            <TextView
+                android:id="@+id/tv_features_title"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="MAIN FEATURES:"
+                android:textSize="18sp"
+                android:textStyle="bold"
+                android:textColor="#863B17"
+                android:layout_marginBottom="12dp"
+                android:gravity="center" />
+
+            <!-- Simple Features List -->
+            <TextView
+                android:id="@+id/tv_features"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Real-time power monitoring\nHistorical data analysis\nCost estimation\nEnergy saving tips"
+                android:textSize="16sp"
+                android:textColor="#863B17"
+                android:lineSpacingExtra="8dp"
+                android:gravity="center" />
+
+        </LinearLayout>
+
+    </androidx.cardview.widget.CardView>
+
+    <!-- Version Info - Bottom of Screen -->
+    <TextView
+        android:id="@+id/tv_version"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/about_version"
+        android:textSize="14sp"
+        android:textColor="#863B17"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        android:layout_marginBottom="40dp" />
+
+    <TextView
+        android:id="@+id/tv_copyright"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/about_copyright"
+        android:textSize="12sp"
+        android:textColor="#863B17"
+        android:layout_marginTop="8dp"
+        app:layout_constraintTop_toBottomOf="@id/tv_version"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent" />
+
+</androidx.constraintlayout.widget.ConstraintLayout>
