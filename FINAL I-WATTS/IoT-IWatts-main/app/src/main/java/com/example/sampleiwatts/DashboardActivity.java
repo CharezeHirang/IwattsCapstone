@@ -78,14 +78,7 @@ public class DashboardActivity extends AppCompatActivity {
         }
     };
 
-    private Handler batteryRefreshHandler = new Handler(Looper.getMainLooper());
-    private Runnable batteryRefreshRunnable = new Runnable() {
-        @Override
-        public void run() {
-            fetchBatteryLife(); // Single read each time
-            batteryRefreshHandler.postDelayed(this, 60000); // Refresh every 60 seconds
-        }
-    };
+
 
 
 
@@ -465,7 +458,7 @@ public class DashboardActivity extends AppCompatActivity {
             }
         });
 
-        batteryRefreshHandler.post(batteryRefreshRunnable);
+
     }
     private void fetchElectricityRate() {
         DatabaseReference electricityRateRef = db.child("system_settings").child("electricity_rate_per_kwh");
@@ -494,30 +487,23 @@ public class DashboardActivity extends AppCompatActivity {
         });
     }
     private void fetchBatteryLife() {
-        // Reference to the "logs" node to get the most recent battery percentage across ALL dates
         DatabaseReference logsRef = db.child("logs");
 
-        logsRef.addListenerForSingleValueEvent(new ValueEventListener() {
+        // Optimize: Only load last 50 date buckets instead of ALL data
+        logsRef.orderByKey().limitToLast(50).addValueEventListener(new ValueEventListener() {
             @Override
             public void onDataChange(DataSnapshot dataSnapshot) {
                 int batteryPercentage = 0;
                 boolean isCharging = false;
 
-                // Prefer the entry with the largest numeric timestamp (timestamp/created_at/ts).
-                // If no numeric timestamp is present anywhere, fall back to the newest push key globally.
-                String selectedDateKey = null;
-                String selectedPushKey = null;
-                DataSnapshot selectedSnapshot = null;
-                long bestTimestamp = Long.MIN_VALUE;
-                boolean usedTimestamp = false;
-
-                // First, collect all entries with battery data and their scores
+                // Keep original logic: collect all entries with battery data and their scores
                 java.util.List<java.util.Map<String, Object>> batteryEntries = new java.util.ArrayList<>();
-                Log.d("BatteryDebug", "Scanning " + dataSnapshot.getChildrenCount() + " date buckets for battery data");
-                
+
+                // REMOVED: Excessive logging here - only log summary
+
                 for (DataSnapshot dateSnapshot : dataSnapshot.getChildren()) {
                     String dateKey = dateSnapshot.getKey();
-                    
+
                     for (DataSnapshot logSnapshot : dateSnapshot.getChildren()) {
                         String pushKey = logSnapshot.getKey();
                         if (pushKey == null) continue;
@@ -525,23 +511,21 @@ public class DashboardActivity extends AppCompatActivity {
                         // Check if this entry has battery data
                         Object vbatPercent = logSnapshot.child("Vbat_percent").getValue();
                         Object charging = logSnapshot.child("Charging").getValue();
-                        
+
                         if (vbatPercent != null || charging != null) {
                             // This entry has battery data, calculate its score
                             Long ts = extractTimestamp(logSnapshot);
                             long score = Long.MIN_VALUE;
-                            
+
                             if (ts != null) {
                                 score = ts;
                             } else {
                                 // Use date bucket score as fallback
                                 score = computeDateBucketScore(dateKey);
                             }
-                            
-                            Log.d("BatteryDebug", "Found battery entry: " + pushKey + " in " + dateKey + 
-                                  " -> Vbat_percent=" + vbatPercent + ", Charging=" + charging + 
-                                  ", score=" + score + ", hasTimestamp=" + (ts != null));
-                            
+
+                            // REMOVED: Individual entry logging to fix performance
+
                             java.util.Map<String, Object> entry = new java.util.HashMap<>();
                             entry.put("snapshot", logSnapshot);
                             entry.put("dateKey", dateKey);
@@ -552,10 +536,16 @@ public class DashboardActivity extends AppCompatActivity {
                         }
                     }
                 }
-                
+
                 Log.d("BatteryDebug", "Found " + batteryEntries.size() + " entries with battery data");
-                
-                // Sort by score (highest first) and select the best entry with battery data
+
+                // Sort by score (highest first) and select the best entry - ORIGINAL LOGIC
+                String selectedDateKey = null;
+                String selectedPushKey = null;
+                DataSnapshot selectedSnapshot = null;
+                long bestTimestamp = Long.MIN_VALUE;
+                boolean usedTimestamp = false;
+
                 if (!batteryEntries.isEmpty()) {
                     batteryEntries.sort((a, b) -> {
                         long scoreA = (Long) a.get("score");
@@ -574,16 +564,16 @@ public class DashboardActivity extends AppCompatActivity {
                         String keyB = (String) b.get("pushKey");
                         return keyB.compareTo(keyA);
                     });
-                    
+
                     java.util.Map<String, Object> bestEntry = batteryEntries.get(0);
                     selectedSnapshot = (DataSnapshot) bestEntry.get("snapshot");
                     selectedDateKey = (String) bestEntry.get("dateKey");
                     selectedPushKey = (String) bestEntry.get("pushKey");
                     bestTimestamp = (Long) bestEntry.get("score");
                     usedTimestamp = (Boolean) bestEntry.get("hasTimestamp");
-                    
-                    Log.d("BatteryDebug", "Selected best battery entry: " + selectedPushKey + " in " + selectedDateKey + 
-                          " with score=" + bestTimestamp + ", hasTimestamp=" + usedTimestamp);
+
+                    Log.d("BatteryDebug", "Selected best battery entry: " + selectedPushKey + " in " + selectedDateKey +
+                            " with score=" + bestTimestamp + ", hasTimestamp=" + usedTimestamp);
                 }
 
                 if (selectedSnapshot != null) {
@@ -593,7 +583,9 @@ public class DashboardActivity extends AppCompatActivity {
                     if (vbatPercentObj instanceof Number) {
                         batteryPercentage = ((Number) vbatPercentObj).intValue();
                     } else if (vbatPercentObj instanceof String) {
-                        try { batteryPercentage = Integer.parseInt((String) vbatPercentObj); } catch (NumberFormatException ignored) { }
+                        try {
+                            batteryPercentage = Integer.parseInt((String) vbatPercentObj);
+                        } catch (NumberFormatException ignored) { }
                     }
 
                     if (chargingObj instanceof Boolean) {
@@ -602,9 +594,12 @@ public class DashboardActivity extends AppCompatActivity {
                         isCharging = Boolean.parseBoolean((String) chargingObj);
                     }
 
-                    Log.d("BatteryLifeSelected", "date=" + selectedDateKey + ", key=" + selectedPushKey + ", pct=" + batteryPercentage + ", charging=" + isCharging + ", usedTimestamp=" + usedTimestamp + (usedTimestamp ? (", ts=" + bestTimestamp) : ""));
+                    Log.d("BatteryLifeSelected", "date=" + selectedDateKey + ", key=" + selectedPushKey +
+                            ", pct=" + batteryPercentage + ", charging=" + isCharging +
+                            ", usedTimestamp=" + usedTimestamp + (usedTimestamp ? (", ts=" + bestTimestamp) : ""));
                 }
 
+                // ORIGINAL DISPLAY LOGIC - unchanged
                 if (selectedSnapshot != null) {
                     String displayText = isCharging ? "Charging" : (batteryPercentage + "%");
 
@@ -641,10 +636,10 @@ public class DashboardActivity extends AppCompatActivity {
                     tvBatteryLife.setText("Battery Life not available");
                     ivBatteryImage.setImageResource(R.drawable.ic_battery9);
                 }
-                
+
                 // Update data fetch timestamp for connection status
                 lastDataUpdateAtMs = System.currentTimeMillis();
-                
+
                 // Immediately update connection status to Connected
                 updateActivationText(true);
             }
