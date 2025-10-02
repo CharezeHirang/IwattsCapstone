@@ -515,6 +515,21 @@ public class RealTimeDataProcessor {
                         Log.d(TAG, String.format("Real peaks calculated from %d log entries - A1: %.1fW@%s, A2: %.1fW@%s, A3: %.1fW@%s",
                                 totalReadings, maxArea1, area1PeakTime, maxArea2, area2PeakTime, maxArea3, area3PeakTime));
 
+                        double overallMaxPeak = Math.max(maxArea1, Math.max(maxArea2, maxArea3));
+                        String overallPeakTime = "--:--";
+
+                        if (overallMaxPeak == maxArea1) {
+                            overallPeakTime = area1PeakTime;
+                        } else if (overallMaxPeak == maxArea2) {
+                            overallPeakTime = area2PeakTime;
+                        } else if (overallMaxPeak == maxArea3) {
+                            overallPeakTime = area3PeakTime;
+                        }
+
+// Update the overall peak time with actual log data (replaces the ":XX" placeholder)
+                        realTimeData.peakTime = overallPeakTime;
+                        realTimeData.peakWatts = overallMaxPeak;
+
                         callback.onDataProcessed(realTimeData);
                     }
 
