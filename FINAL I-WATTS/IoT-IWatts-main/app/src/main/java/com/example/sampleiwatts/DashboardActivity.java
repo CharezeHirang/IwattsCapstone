@@ -4,6 +4,8 @@ import android.content.Intent;
 import android.graphics.Rect;
 import android.graphics.drawable.Drawable;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.text.Editable;
 import android.text.SpannableString;
 import android.text.Spanned;
@@ -75,6 +77,16 @@ public class DashboardActivity extends AppCompatActivity {
             activationHandler.postDelayed(this, 5_000L); // check every 5 seconds instead of 30
         }
     };
+
+    private Handler batteryRefreshHandler = new Handler(Looper.getMainLooper());
+    private Runnable batteryRefreshRunnable = new Runnable() {
+        @Override
+        public void run() {
+            fetchBatteryLife(); // Single read each time
+            batteryRefreshHandler.postDelayed(this, 60000); // Refresh every 60 seconds
+        }
+    };
+
 
 
     private boolean isArea1Editable = false;
@@ -452,10 +464,12 @@ public class DashboardActivity extends AppCompatActivity {
                 Log.e("FirebaseError", "Error fetching cost filter data: " + databaseError.getMessage());
             }
         });
+
+        batteryRefreshHandler.post(batteryRefreshRunnable);
     }
     private void fetchElectricityRate() {
         DatabaseReference electricityRateRef = db.child("system_settings").child("electricity_rate_per_kwh");
-        electricityRateRef.addValueEventListener(new ValueEventListener() {
+        electricityRateRef.addListenerForSingleValueEvent(new ValueEventListener() {
             @Override
             public void onDataChange(DataSnapshot dataSnapshot) {
                 Object value = dataSnapshot.getValue();
@@ -483,7 +497,7 @@ public class DashboardActivity extends AppCompatActivity {
         // Reference to the "logs" node to get the most recent battery percentage across ALL dates
         DatabaseReference logsRef = db.child("logs");
 
-        logsRef.addValueEventListener(new ValueEventListener() {
+        logsRef.addListenerForSingleValueEvent(new ValueEventListener() {
             @Override
             public void onDataChange(DataSnapshot dataSnapshot) {
                 int batteryPercentage = 0;
@@ -645,7 +659,7 @@ public class DashboardActivity extends AppCompatActivity {
     // Dedicated activation watcher: listens to any change under logs and marks device active by heartbeat
     private void startActivationWatcher() {
         DatabaseReference logsRef = db.child("logs");
-        logsRef.addValueEventListener(new ValueEventListener() {
+        logsRef.addListenerForSingleValueEvent(new ValueEventListener() {
             @Override public void onDataChange(DataSnapshot snapshot) {
                 // Find the newest inner push key across all date buckets
                 String latestKey = null;
@@ -993,7 +1007,7 @@ public class DashboardActivity extends AppCompatActivity {
     }
     private void fetchAreaNames() {
         DatabaseReference areaNamesRef = db.child("system_settings");
-        areaNamesRef.addValueEventListener(new ValueEventListener() {
+        areaNamesRef.addListenerForSingleValueEvent(new ValueEventListener() {
             @Override
             public void onDataChange(DataSnapshot dataSnapshot) {
                 // Fetch the area names

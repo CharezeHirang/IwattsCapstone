@@ -154,6 +154,15 @@ public class CostEstimationActivity extends AppCompatActivity {
         });
         method();
     }
+    @Override
+    protected void onResume() {
+        super.onResume();
+        // Reload all data when user returns to this screen
+        method(); // This calls all your fetch methods
+    }
+
+
+
     private  void method(){
         fetchFilterDates();
         fetchTotalCost();
@@ -335,7 +344,7 @@ public class CostEstimationActivity extends AppCompatActivity {
         // Reference to the "cost_filter_date" node
         DatabaseReference filterDateRef = db.child("cost_filter_date");
 
-        filterDateRef.addValueEventListener(new ValueEventListener() {
+        filterDateRef.addListenerForSingleValueEvent(new ValueEventListener() {
             @Override
             public void onDataChange(DataSnapshot dataSnapshot) {
                 // Get starting_date
@@ -365,7 +374,7 @@ public class CostEstimationActivity extends AppCompatActivity {
     private void fetchTotalCost() {
         DatabaseReference costFilterDateRef = db.child("cost_filter_date");
 
-        costFilterDateRef.addValueEventListener(new ValueEventListener() {
+        costFilterDateRef.addListenerForSingleValueEvent(new ValueEventListener() {
             @Override
             public void onDataChange(DataSnapshot dataSnapshot) {
                 String startingDateString = dataSnapshot.child("starting_date").getValue(String.class);
@@ -401,7 +410,7 @@ public class CostEstimationActivity extends AppCompatActivity {
 
                     // Fetch hourly summaries and calculate total cost
                     DatabaseReference hourlySummariesRef = db.child("hourly_summaries");
-                    hourlySummariesRef.orderByKey().addValueEventListener(new ValueEventListener() {
+                    hourlySummariesRef.orderByKey().addListenerForSingleValueEvent(new ValueEventListener() {
                         @Override
                         public void onDataChange(DataSnapshot dataSnapshot) {
                             double totalCost = 0.0;
@@ -453,7 +462,7 @@ public class CostEstimationActivity extends AppCompatActivity {
         // Reference to the cost_filter_date to get the starting and ending dates
         DatabaseReference costFilterDateRef = db.child("cost_filter_date");
 
-        costFilterDateRef.addValueEventListener(new ValueEventListener() {
+        costFilterDateRef.addListenerForSingleValueEvent(new ValueEventListener() {
             @Override
             public void onDataChange(DataSnapshot dataSnapshot) {
                 // Fetch the starting and ending dates from Firebase
@@ -473,7 +482,7 @@ public class CostEstimationActivity extends AppCompatActivity {
                     Log.d("CostEstimation", "Parsed Ending Date: " + endingDate);
 
                     // Now, fetch the hourly summaries within the date range
-                    db.child("hourly_summaries").orderByKey().addValueEventListener(new ValueEventListener() {
+                    db.child("hourly_summaries").orderByKey().addListenerForSingleValueEvent(new ValueEventListener() {
                         @Override
                         public void onDataChange(DataSnapshot dataSnapshot) {
                             double cumulativeKwh = 0;
@@ -535,7 +544,7 @@ public class CostEstimationActivity extends AppCompatActivity {
     }
     private void fetchElectricityRate() {
         DatabaseReference electricityRateRef = db.child("system_settings").child("electricity_rate_per_kwh");
-        electricityRateRef.addValueEventListener(new ValueEventListener() {
+        electricityRateRef.addListenerForSingleValueEvent(new ValueEventListener() {
             @Override
             public void onDataChange(DataSnapshot dataSnapshot) {
                 // Get the value from the database
@@ -601,7 +610,7 @@ public class CostEstimationActivity extends AppCompatActivity {
         SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd", Locale.getDefault());
         String currentDate = dateFormat.format(new Date());
         DatabaseReference hourlySummariesRef = db.child("hourly_summaries").child(currentDate);
-        hourlySummariesRef.addValueEventListener(new ValueEventListener() {
+        hourlySummariesRef.addListenerForSingleValueEvent(new ValueEventListener() {
             @Override
             public void onDataChange(DataSnapshot dataSnapshot) {
                 double totalCost = 0.0;
@@ -625,7 +634,7 @@ public class CostEstimationActivity extends AppCompatActivity {
         DatabaseReference costFilterDateRef = db.child("cost_filter_date");
 
         // First, fetch the date filter (starting & ending)
-        costFilterDateRef.addValueEventListener(new ValueEventListener() {
+        costFilterDateRef.addListenerForSingleValueEvent(new ValueEventListener() {
             @Override
             public void onDataChange(DataSnapshot dataSnapshot) {
                 String startingDateString = dataSnapshot.child("starting_date").getValue(String.class);
@@ -637,7 +646,7 @@ public class CostEstimationActivity extends AppCompatActivity {
                     Date endingDate = dateFormatter.parse(endingDateString);
 
                     // Fetch the electricity rate from system_settings
-                    systemSettingsRef.child("electricity_rate_per_kwh").addValueEventListener(new ValueEventListener() {
+                    systemSettingsRef.child("electricity_rate_per_kwh").addListenerForSingleValueEvent(new ValueEventListener() {
                         @Override
                         public void onDataChange(DataSnapshot dataSnapshot) {
                             Double electricityRatePerKwh = dataSnapshot.getValue(Double.class);
@@ -651,7 +660,7 @@ public class CostEstimationActivity extends AppCompatActivity {
                             final double[] totalArea2Kwh = {0};
                             final double[] totalArea3Kwh = {0};
 
-                            hourlySummariesRef.addValueEventListener(new ValueEventListener() {
+                            hourlySummariesRef.addListenerForSingleValueEvent(new ValueEventListener() {
                                 @Override
                                 public void onDataChange(DataSnapshot dataSnapshot) {
                                     for (DataSnapshot dateSnapshot : dataSnapshot.getChildren()) {
@@ -726,7 +735,7 @@ public class CostEstimationActivity extends AppCompatActivity {
         // Reference to the cost_filter_date in Firebase to get the starting and ending dates
         DatabaseReference costFilterDateRef = db.child("cost_filter_date");
 
-        costFilterDateRef.addValueEventListener(new ValueEventListener() {
+        costFilterDateRef.addListenerForSingleValueEvent(new ValueEventListener() {
             @Override
             public void onDataChange(DataSnapshot dataSnapshot) {
                 String startingDateString = dataSnapshot.child("starting_date").getValue(String.class);
@@ -773,7 +782,7 @@ public class CostEstimationActivity extends AppCompatActivity {
                     final double[] cumulativeCost = {0};
 
                     long finalDaysBetween = daysBetween;
-                    hourlySummariesRef.orderByKey().addValueEventListener(new ValueEventListener() {
+                    hourlySummariesRef.orderByKey().addListenerForSingleValueEvent(new ValueEventListener() {
                         @Override
                         public void onDataChange(DataSnapshot dataSnapshot) {
                             cumulativeCost[0] = 0;
@@ -824,7 +833,7 @@ public class CostEstimationActivity extends AppCompatActivity {
     private void fetchArea1Name() {
         DatabaseReference systemSettingsRef = db.child("system_settings");
 
-        systemSettingsRef.addValueEventListener(new ValueEventListener() {
+        systemSettingsRef.addListenerForSingleValueEvent(new ValueEventListener() {
             @Override
             public void onDataChange(DataSnapshot dataSnapshot) {
                 String area1Name = dataSnapshot.child("area1_name").getValue(String.class);
@@ -843,7 +852,7 @@ public class CostEstimationActivity extends AppCompatActivity {
     private void fetchArea2Name() {
         DatabaseReference systemSettingsRef = db.child("system_settings");
 
-        systemSettingsRef.addValueEventListener(new ValueEventListener() {
+        systemSettingsRef.addListenerForSingleValueEvent(new ValueEventListener() {
             @Override
             public void onDataChange(DataSnapshot dataSnapshot) {
                 String area1Name = dataSnapshot.child("area2_name").getValue(String.class);
@@ -862,7 +871,7 @@ public class CostEstimationActivity extends AppCompatActivity {
     private void fetchArea3Name() {
         DatabaseReference systemSettingsRef = db.child("system_settings");
 
-        systemSettingsRef.addValueEventListener(new ValueEventListener() {
+        systemSettingsRef.addListenerForSingleValueEvent(new ValueEventListener() {
             @Override
             public void onDataChange(DataSnapshot dataSnapshot) {
                 String area1Name = dataSnapshot.child("area3_name").getValue(String.class);
@@ -883,7 +892,7 @@ public class CostEstimationActivity extends AppCompatActivity {
         DatabaseReference dailySummariesRef = db.child("daily_summaries");
         DatabaseReference systemSettingsRef = db.child("system_settings"); // Reference to system_settings
 
-        costFilterDateRef.addValueEventListener(new ValueEventListener() {
+        costFilterDateRef.addListenerForSingleValueEvent(new ValueEventListener() {
             @Override
             public void onDataChange(DataSnapshot snapshot) {
                 String startingDateString = snapshot.child("starting_date").getValue(String.class);
@@ -896,7 +905,7 @@ public class CostEstimationActivity extends AppCompatActivity {
                     final Date startingDate = keyFormatter.parse(startingDateString);
                     final Date endingDate   = keyFormatter.parse(endingDateString);
 
-                    systemSettingsRef.addValueEventListener(new ValueEventListener() {
+                    systemSettingsRef.addListenerForSingleValueEvent(new ValueEventListener() {
                         @Override
                         public void onDataChange(DataSnapshot settingsSnapshot) {
 
@@ -908,7 +917,7 @@ public class CostEstimationActivity extends AppCompatActivity {
                             final String finalArea2Name = (area2Name != null) ? area2Name : "Area 2";
                             final String finalArea3Name = (area3Name != null) ? area3Name : "Area 3";
 
-                            dailySummariesRef.addValueEventListener(new ValueEventListener() {
+                            dailySummariesRef.addListenerForSingleValueEvent(new ValueEventListener() {
                                 @Override
                                 public void onDataChange(DataSnapshot dataSnapshot) {
                                     TreeMap<Long, float[]> perDayCosts = new TreeMap<>();
@@ -1028,7 +1037,7 @@ public class CostEstimationActivity extends AppCompatActivity {
         DatabaseReference hourlySummariesRef = db.child("hourly_summaries");
         DatabaseReference costFilterDateRef = db.child("cost_filter_date");
 
-        costFilterDateRef.addValueEventListener(new ValueEventListener() {
+        costFilterDateRef.addListenerForSingleValueEvent(new ValueEventListener() {
             @Override
             public void onDataChange(DataSnapshot snapshot) {
                 String startingDateString = snapshot.child("starting_date").getValue(String.class);
@@ -1040,7 +1049,7 @@ public class CostEstimationActivity extends AppCompatActivity {
                     Date endingDate = dateFormatter.parse(endingDateString);
 
                     // Fetch settings (rate + names)
-                    systemSettingsRef.addValueEventListener(new ValueEventListener() {
+                    systemSettingsRef.addListenerForSingleValueEvent(new ValueEventListener() {
                         @Override
                         public void onDataChange(DataSnapshot settingsSnapshot) {
                             Double electricityRatePerKwh = settingsSnapshot.child("electricity_rate_per_kwh").getValue(Double.class);
@@ -1057,7 +1066,7 @@ public class CostEstimationActivity extends AppCompatActivity {
                             final double[] totalArea2Kwh = {0};
                             final double[] totalArea3Kwh = {0};
 
-                            hourlySummariesRef.addValueEventListener(new ValueEventListener() {
+                            hourlySummariesRef.addListenerForSingleValueEvent(new ValueEventListener() {
                                 @Override
                                 public void onDataChange(DataSnapshot dataSnapshot) {
                                     for (DataSnapshot dateSnapshot : dataSnapshot.getChildren()) {
