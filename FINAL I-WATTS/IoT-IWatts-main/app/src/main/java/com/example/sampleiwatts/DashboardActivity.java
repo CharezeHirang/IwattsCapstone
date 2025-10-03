@@ -66,7 +66,7 @@ public class DashboardActivity extends AppCompatActivity {
     private long lastLogsUpdateAtMs = 0L;
     private long lastDataUpdateAtMs = 0L; // Track successful data fetching
     private String lastActivationSeenKey = null; // latest inner push key we've seen for activation heartbeats
-    private final long logsStaleAfterMs = 120_000L; // 2 minutes with no updates => inactive
+    private final long logsStaleAfterMs = 20_000L; // 2 minutes with no updates => inactive
     private final android.os.Handler activationHandler = new android.os.Handler(android.os.Looper.getMainLooper());
     private final Runnable activationChecker = new Runnable() {
         @Override public void run() {
@@ -692,12 +692,30 @@ public class DashboardActivity extends AppCompatActivity {
 
     private void updateActivationText(boolean active) {
         if (activated == null) return;
-        activated.setText(active ? "Connected" : "Not connected");
-        try {
-            int color = getResources().getColor(active ? R.color.green : R.color.red);
-            activated.setTextColor(color);
-        } catch (Exception ignored) { }
+
+        if (active) {
+            activated.setText("Connected");
+            try {
+                int color = getResources().getColor(R.color.green);
+                activated.setTextColor(color);
+            } catch (Exception ignored) { }
+        } else {
+            activated.setText("Not connected");
+            try {
+                int color = getResources().getColor(R.color.red);
+                activated.setTextColor(color);
+            } catch (Exception ignored) { }
+
+            // 👉 Extra actions for "Not connected"
+            if (ivBatteryImage != null) {
+                ivBatteryImage.setImageResource(R.drawable.ic_battery9);
+            }
+            if (tvBatteryLife != null) {
+                tvBatteryLife.setText("---");
+            }
+        }
     }
+
     private void fetchTotalKwh() {
         // Reference to the cost_filter_date to get the starting and ending dates
         DatabaseReference costFilterDateRef = db.child("cost_filter_date");
