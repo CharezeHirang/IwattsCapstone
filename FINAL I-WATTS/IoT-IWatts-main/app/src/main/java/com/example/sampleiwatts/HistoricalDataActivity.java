@@ -605,6 +605,10 @@ public class HistoricalDataActivity extends AppCompatActivity {
             double area1Total = 0.0, area2Total = 0.0, area3Total = 0.0;
             double area1MaxPeak = 0.0, area2MaxPeak = 0.0, area3MaxPeak = 0.0;
 
+            double area1TotalCost = 0.0;
+            double area2TotalCost = 0.0;
+            double area3TotalCost = 0.0;
+
             // Daily data for charts
             List<Double> dailyConsumption = new ArrayList<>();
             List<String> dateLabels = new ArrayList<>();
@@ -673,6 +677,24 @@ public class HistoricalDataActivity extends AppCompatActivity {
                             area2Total += area2Kwh;
                             area3Total += area3Kwh;
 
+                            Map<String, Object> area1Data = (Map<String, Object>) areaBreakdown.get("area1");
+                            if (area1Data != null) {
+                                Double area1Cost = getDoubleValue(area1Data.get("cost"));
+                                if (area1Cost != null) area1TotalCost += area1Cost;
+                            }
+
+                            Map<String, Object> area2Data = (Map<String, Object>) areaBreakdown.get("area2");
+                            if (area2Data != null) {
+                                Double area2Cost = getDoubleValue(area2Data.get("cost"));
+                                if (area2Cost != null) area2TotalCost += area2Cost;
+                            }
+
+                            Map<String, Object> area3Data = (Map<String, Object>) areaBreakdown.get("area3");
+                            if (area3Data != null) {
+                                Double area3Cost = getDoubleValue(area3Data.get("cost"));
+                                if (area3Cost != null) area3TotalCost += area3Cost;
+                            }
+
                             // FIXED: Calculate proportional peaks for this day
                             if (dayPeak != null && dayConsumption != null && dayConsumption > 0) {
                                 double area1Peak = dayPeak * (area1Kwh / dayConsumption);
@@ -730,7 +752,8 @@ public class HistoricalDataActivity extends AppCompatActivity {
             // Update UI with processed data
             updateSummaryDisplay(totalConsumption, totalCost, peakDay, dayCount);
             updateAreaDisplays(area1Total, area2Total, area3Total, totalConsumption,
-                    area1MaxPeak, area2MaxPeak, area3MaxPeak);
+                    area1MaxPeak, area2MaxPeak, area3MaxPeak,
+                    area1TotalCost, area2TotalCost, area3TotalCost);
             updateCharts(dailyConsumption, dateLabels, areaDailyData);
 
             // Load previous period for comparison
@@ -876,7 +899,8 @@ public class HistoricalDataActivity extends AppCompatActivity {
      * FIXED: Update area displays with proper peak calculations
      */
     private void updateAreaDisplays(double area1Total, double area2Total, double area3Total,
-                                    double grandTotal, double area1Peak, double area2Peak, double area3Peak) {
+                                    double grandTotal, double area1Peak, double area2Peak, double area3Peak,
+                                    double area1TotalCost, double area2TotalCost, double area3TotalCost) {
         try {
             // Calculate percentages
             double area1Percentage = grandTotal > 0 ? (area1Total / grandTotal) * 100 : 0;
@@ -885,19 +909,19 @@ public class HistoricalDataActivity extends AppCompatActivity {
 
             // Update Area 1
             area1TotalConsumption.setText(String.format(Locale.getDefault(), "%.2f kWh", area1Total));
-            area1EstimatedCost.setText(String.format(Locale.getDefault(), "₱%.2f", area1Total * electricityRate));
+            area1EstimatedCost.setText(String.format(Locale.getDefault(), "₱%.2f", area1TotalCost));
             area1SharePercentage.setText(String.format(Locale.getDefault(), "%.1f%%", area1Percentage));
             area1PeakConsumption.setText(String.format(Locale.getDefault(), "%.0f W", area1Peak));
 
             // Update Area 2
             area2TotalConsumption.setText(String.format(Locale.getDefault(), "%.2f kWh", area2Total));
-            area2EstimatedCost.setText(String.format(Locale.getDefault(), "₱%.2f", area2Total * electricityRate));
+            area2EstimatedCost.setText(String.format(Locale.getDefault(), "₱%.2f", area2TotalCost));
             area2SharePercentage.setText(String.format(Locale.getDefault(), "%.1f%%", area2Percentage));
             area2PeakConsumption.setText(String.format(Locale.getDefault(), "%.0f W", area2Peak));
 
             // Update Area 3
             area3TotalConsumption.setText(String.format(Locale.getDefault(), "%.2f kWh", area3Total));
-            area3EstimatedCost.setText(String.format(Locale.getDefault(), "₱%.2f", area3Total * electricityRate));
+            area3EstimatedCost.setText(String.format(Locale.getDefault(), "₱%.2f", area3TotalCost));
             area3SharePercentage.setText(String.format(Locale.getDefault(), "%.1f%%", area3Percentage));
             area3PeakConsumption.setText(String.format(Locale.getDefault(), "%.0f W", area3Peak));
 
