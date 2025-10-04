@@ -288,7 +288,9 @@
                             android:layout_marginTop="10dp"
                             android:background="#863B17" />
 
+                        <!-- Current Rate Display -->
                         <LinearLayout
+                            android:id="@+id/numbers"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:orientation="horizontal"
@@ -329,6 +331,34 @@
                                 android:textSize="15sp"
                                 android:textColor="#863B17" />
                         </LinearLayout>
+
+                        <!-- Previous Rates History -->
+                        <LinearLayout
+                            android:id="@+id/previousRatesContainer"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="vertical"
+                            android:layout_marginTop="5dp"
+                            android:layout_marginStart="20dp"
+                            android:layout_marginEnd="20dp"
+                            android:visibility="gone">
+
+
+
+                            <ScrollView
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:maxHeight="150dp">
+
+                                <LinearLayout
+                                    android:id="@+id/previousNumbers"
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:orientation="vertical" />
+
+                            </ScrollView>
+
+                        </LinearLayout>
                     </LinearLayout>
 
                 </LinearLayout>
@@ -350,67 +380,21 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_gravity="center"
-                    android:orientation="horizontal"
-                    android:weightSum="2">
+                    android:layout_marginBottom="5dp"
+                    android:layout_marginTop="5dp"
+                    android:layout_marginStart="10dp"
+                    android:layout_marginEnd="10dp"
+                    android:orientation="horizontal">
 
-                    <androidx.cardview.widget.CardView
-                        android:id="@+id/bg_mainConsumption"
-                        android:layout_width="0dp"
-                        android:layout_height="100dp"
-                        android:layout_weight="1"
-                        android:layout_marginBottom="5dp"
-                        android:layout_marginTop="5dp"
-                        android:layout_marginStart="10dp"
-                        android:layout_marginEnd="5dp"
-                        app:cardCornerRadius="16dp"
-                        app:cardElevation="4dp"
-                        app:cardBackgroundColor="#FEF9E7"
-                        android:padding="16dp">
-                        <LinearLayout
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:orientation="vertical"
-                            android:gravity="center"
-                            android:padding="12dp">
-                            <TextView
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:text="Total Usage"
-                                android:textColor="#863B17"
-                                android:textSize="12sp"
-                                android:textStyle="bold"
-                                android:layout_marginTop="8dp"
-                                android:layout_marginEnd="8dp"
-                                android:layout_marginStart="8dp"/>
-                            <TextView
-                                android:id="@+id/tvTotalUsage"
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:text="0"
-                                android:textColor="#863B17"
-                                android:textAlignment="center"
-                                android:textSize="20sp"
-                                android:textStyle="bold"
-                                android:layout_marginTop="2dp"/>
-                            <TextView
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:textAlignment="center"
-                                android:textSize="12sp"
-                                android:text="kwh"
-                                android:textColor="#863B17"
-                                android:alpha="0.8"/>
-                        </LinearLayout>
-                    </androidx.cardview.widget.CardView>
 
                     <androidx.cardview.widget.CardView
                         android:id="@+id/mainConsumption"
                         android:layout_width="0dp"
-                        android:layout_height="100dp"
+                        android:layout_height="90dp"
                         android:layout_weight="1"
-                        android:layout_marginTop="5dp"
                         android:layout_marginBottom="5dp"
-                        android:layout_marginStart="5dp"
+                        android:layout_marginTop="5dp"
+                        android:layout_marginStart="10dp"
                         android:layout_marginEnd="10dp"
                         app:cardCornerRadius="16dp"
                         app:cardElevation="4dp"
@@ -425,11 +409,11 @@
                             <TextView
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
-                                android:text="DailyCost"
+                                android:text="Daily Cost"
                                 android:textColor="#863B17"
                                 android:textSize="12sp"
                                 android:textStyle="bold"
-                                android:layout_marginTop="8dp"
+                                android:layout_marginTop="5dp"
                                 android:layout_marginEnd="8dp"
                                 android:layout_marginStart="8dp"/>
 

@@ -1,5 +1,8 @@
 package com.example.sampleiwatts;
 
+
+import android.app.AlertDialog;
+import android.content.Context;
 import android.content.Intent;
 import android.graphics.Rect;
 import android.graphics.drawable.Drawable;
@@ -13,6 +16,8 @@ import android.text.TextWatcher;
 import android.util.Log;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.inputmethod.EditorInfo;
+import android.view.inputmethod.InputMethodManager;
 import android.widget.EditText;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -52,7 +57,7 @@ public class DashboardActivity extends AppCompatActivity {
     private static final String TAG = "MainActivity";
     private TextView tvTotalCost, tvElectricityRate, tvBatteryLife,tvTotalConsumption, area1_details, area2_details, area3_details, activated;
     private TextView tvArea1Kwh, tvArea2Kwh, tvArea3Kwh,  tvArea1Percentage, tvArea2Percentage, tvArea3Percentage, tvPeakTime, tvPeakValue;
-    private TextView tvPercentageChange,  area1_icon, area2_icon, area3_icon;
+    private TextView tvPercentageChange,  area1_icon, area2_icon, area3_icon, tvPercent1, tvPercent2, tvPercent3;
 
     private ImageView ivBatteryImage,tvTrendIcon;
     private LineChart lineChart1, lineChart2, lineChart3;
@@ -66,6 +71,8 @@ public class DashboardActivity extends AppCompatActivity {
     private long lastLogsUpdateAtMs = 0L;
     private long lastDataUpdateAtMs = 0L; // Track successful data fetching
     private String lastActivationSeenKey = null; // latest inner push key we've seen for activation heartbeats
+    private Handler connectionHandler = new Handler();
+    private static final long TIMEOUT_MS = 20000;
     private final long logsStaleAfterMs = 20_000L; // 2 minutes with no updates => inactive
     private final android.os.Handler activationHandler = new android.os.Handler(android.os.Looper.getMainLooper());
     private final Runnable activationChecker = new Runnable() {
@@ -85,6 +92,11 @@ public class DashboardActivity extends AppCompatActivity {
     private boolean isArea1Editable = false;
     private boolean isArea2Editable = false;
     private boolean isArea3Editable = false;
+    
+    // Store original names before editing
+    private String originalArea1Name = "";
+    private String originalArea2Name = "";
+    private String originalArea3Name = "";
 
     // Method to get appropriate icon based on area name
     private String getIconForAreaName(String areaName) {
@@ -194,6 +206,9 @@ public class DashboardActivity extends AppCompatActivity {
             drawerHelper.setReturnToActivity(sourceActivity);
         }
 
+        tvPercent1 = findViewById(R.id.tvPercent1);
+        tvPercent2 = findViewById(R.id.tvPercent2);
+        tvPercent3 = findViewById(R.id.tvPercent3);
         area1_icon = findViewById(R.id.area1_icon);
         area2_icon = findViewById(R.id.area2_icon);
         area3_icon = findViewById(R.id.area3_icon);
@@ -211,6 +226,8 @@ public class DashboardActivity extends AppCompatActivity {
         ic_close = findViewById(R.id.close1);
 
         area1_card.setOnClickListener(v -> {
+            // Hide keyboard when clicking on area card
+            hideKeyboard(v);
             if (popArea1.getVisibility() == View.GONE) {
                 popArea1.setVisibility(View.VISIBLE);
             } else {
@@ -219,6 +236,7 @@ public class DashboardActivity extends AppCompatActivity {
         });
 
         ic_close.setOnClickListener(v -> {
+            hideKeyboard(v);
             popArea1.setVisibility(View.GONE);
         });
 
@@ -227,6 +245,8 @@ public class DashboardActivity extends AppCompatActivity {
         close2 = findViewById(R.id.close2);
 
         area2_card.setOnClickListener(v -> {
+            // Hide keyboard when clicking on area card
+            hideKeyboard(v);
             if (popArea2.getVisibility() == View.GONE) {
                 popArea2.setVisibility(View.VISIBLE);
             } else {
@@ -235,6 +255,7 @@ public class DashboardActivity extends AppCompatActivity {
         });
 
         close2.setOnClickListener(v -> {
+            hideKeyboard(v);
             popArea2.setVisibility(View.GONE);
         });
 
@@ -243,6 +264,8 @@ public class DashboardActivity extends AppCompatActivity {
         close3 = findViewById(R.id.close3);
 
         area3_card.setOnClickListener(v -> {
+            // Hide keyboard when clicking on area card
+            hideKeyboard(v);
             if (popArea3.getVisibility() == View.GONE) {
                 popArea3.setVisibility(View.VISIBLE);
             } else {
@@ -251,7 +274,25 @@ public class DashboardActivity extends AppCompatActivity {
         });
 
         close3.setOnClickListener(v -> {
+            hideKeyboard(v);
             popArea3.setVisibility(View.GONE);
+        });
+
+        // Add global touch listener to hide keyboard when tapping outside EditTexts
+        View rootView = findViewById(android.R.id.content);
+        rootView.setOnTouchListener((v, event) -> {
+            if (event.getAction() == MotionEvent.ACTION_DOWN) {
+                View currentFocus = getCurrentFocus();
+                if (currentFocus instanceof EditText) {
+                    Rect outRect = new Rect();
+                    currentFocus.getGlobalVisibleRect(outRect);
+                    if (!outRect.contains((int)event.getRawX(), (int)event.getRawY())) {
+                        currentFocus.clearFocus();
+                        hideKeyboard(currentFocus);
+                    }
+                }
+            }
+            return false;
         });
 
         percentageChangeContainer = findViewById(R.id.percentageChangeContainer);
@@ -275,23 +316,23 @@ public class DashboardActivity extends AppCompatActivity {
         etArea2 = findViewById(R.id.etArea2);
         etArea3 = findViewById(R.id.etArea3);
 
-        // Make EditText fields non-editable by default
+// Make EditText fields non-editable by default
         etArea1.setFocusable(false);
         etArea1.setClickable(false);
         etArea1.setLongClickable(false);
         etArea1.setCursorVisible(false);
-        
+
         etArea2.setFocusable(false);
         etArea2.setClickable(false);
         etArea2.setLongClickable(false);
         etArea2.setCursorVisible(false);
-        
+
         etArea3.setFocusable(false);
         etArea3.setClickable(false);
         etArea3.setLongClickable(false);
         etArea3.setCursorVisible(false);
 
-        // Add text change listeners to update icons dynamically
+// Add text change listeners to update icons dynamically
         etArea1.addTextChangedListener(new TextWatcher() {
             @Override
             public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
@@ -305,6 +346,7 @@ public class DashboardActivity extends AppCompatActivity {
                 updateAreaDetailsHeader(1, s.toString());
             }
         });
+
 
         etArea2.addTextChangedListener(new TextWatcher() {
             @Override
@@ -320,6 +362,7 @@ public class DashboardActivity extends AppCompatActivity {
             }
         });
 
+
         etArea3.addTextChangedListener(new TextWatcher() {
             @Override
             public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
@@ -331,6 +374,63 @@ public class DashboardActivity extends AppCompatActivity {
             public void afterTextChanged(Editable s) {
                 updateAreaIcon(3, s.toString());
                 updateAreaDetailsHeader(3, s.toString());
+            }
+        });
+        etArea1.setOnEditorActionListener((v, actionId, event) -> {
+            if (actionId == EditorInfo.IME_ACTION_DONE || actionId == EditorInfo.IME_ACTION_GO || actionId == EditorInfo.IME_ACTION_NEXT) {
+                etArea1.clearFocus(); // remove cursor first
+                // Use Handler to ensure keyboard hiding happens after focus change
+                new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                    hideKeyboard(v);
+                    hideKeyboardFromCurrentFocus(); // Additional fallback
+                }, 100);
+                return true;
+            }
+            return false;
+        });
+
+        etArea2.setOnEditorActionListener((v, actionId, event) -> {
+            if (actionId == EditorInfo.IME_ACTION_DONE || actionId == EditorInfo.IME_ACTION_GO || actionId == EditorInfo.IME_ACTION_NEXT) {
+                etArea2.clearFocus();
+                // Use Handler to ensure keyboard hiding happens after focus change
+                new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                    hideKeyboard(v);
+                    hideKeyboardFromCurrentFocus(); // Additional fallback
+                }, 100);
+                return true;
+            }
+            return false;
+        });
+
+        etArea3.setOnEditorActionListener((v, actionId, event) -> {
+            if (actionId == EditorInfo.IME_ACTION_DONE || actionId == EditorInfo.IME_ACTION_GO || actionId == EditorInfo.IME_ACTION_NEXT) {
+                etArea3.clearFocus();
+                // Use Handler to ensure keyboard hiding happens after focus change
+                new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                    hideKeyboard(v);
+                    hideKeyboardFromCurrentFocus(); // Additional fallback
+                }, 100);
+                return true;
+            }
+            return false;
+        });
+
+        // Add focus change listeners to handle keyboard hiding
+        etArea1.setOnFocusChangeListener((v, hasFocus) -> {
+            if (!hasFocus) {
+                hideKeyboard(v);
+            }
+        });
+
+        etArea2.setOnFocusChangeListener((v, hasFocus) -> {
+            if (!hasFocus) {
+                hideKeyboard(v);
+            }
+        });
+
+        etArea3.setOnFocusChangeListener((v, hasFocus) -> {
+            if (!hasFocus) {
+                hideKeyboard(v);
             }
         });
 
@@ -373,6 +473,32 @@ public class DashboardActivity extends AppCompatActivity {
         activationHandler.removeCallbacks(activationChecker);
         activationHandler.post(activationChecker);
     }
+    private void hideKeyboard(View view) {
+        InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+        if (imm != null && view != null) {
+            imm.hideSoftInputFromWindow(view.getWindowToken(), 0);
+        }
+    }
+    
+    // Alternative method to hide keyboard from current focus
+    private void hideKeyboardFromCurrentFocus() {
+        View currentFocus = getCurrentFocus();
+        if (currentFocus != null) {
+            InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+            if (imm != null) {
+                imm.hideSoftInputFromWindow(currentFocus.getWindowToken(), 0);
+            }
+        }
+    }
+    
+    // Force hide keyboard using activity context
+    private void forceHideKeyboard() {
+        InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+        if (imm != null) {
+            imm.toggleSoftInput(InputMethodManager.SHOW_IMPLICIT, 0);
+        }
+    }
+
     private void fetchTotalCost() {
         DatabaseReference costFilterDateRef = db.child("cost_filter_date");
 
@@ -682,14 +808,31 @@ public class DashboardActivity extends AppCompatActivity {
                 if (!latestKey.equals(lastActivationSeenKey)) {
                     // Newer log arrived → mark active and remember key/time
                     lastActivationSeenKey = latestKey;
-                    lastLogsUpdateAtMs = System.currentTimeMillis();
+                    lastLogsUpdateAtMs = System.currentTimeMillis();  // ✅ this timestamp drives the timeout
                     updateActivationText(true);
                 }
             }
+
             @Override public void onCancelled(DatabaseError error) { }
         });
     }
 
+    private void startConnectionTimeoutChecker() {
+        connectionHandler.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                if (lastLogsUpdateAtMs > 0) {
+                    long diff = System.currentTimeMillis() - lastLogsUpdateAtMs;
+                    if (diff > TIMEOUT_MS) {
+                        // No new logs in 20 sec → Not connected
+                        updateActivationText(false);
+                    }
+                }
+                // Keep checking every 5 seconds
+                connectionHandler.postDelayed(this, 5000);
+            }
+        }, 5000);
+    }
     private void updateActivationText(boolean active) {
         if (activated == null) return;
 
@@ -813,22 +956,10 @@ public class DashboardActivity extends AppCompatActivity {
             Toast.makeText(DashboardActivity.this, "Area 1 Name cannot be empty!", Toast.LENGTH_SHORT).show();
             return;
         }
-        area1Name = capitalizeFirstLetter(area1Name);
-        DatabaseReference systemSettingsRef = db.child("system_settings");
-        String finalArea1Name = area1Name;
-        systemSettingsRef.child("area1_name").setValue(area1Name)
-                .addOnSuccessListener(aVoid -> {
-                    // Clear focus after successful update
-                    etArea1.clearFocus();
-                    Toast.makeText(DashboardActivity.this, "Area 1 Name updated", Toast.LENGTH_SHORT).show();
-                    // Make field non-editable again after successful update
-                    disableEditing(etArea1, 1);
-                })
-                .addOnFailureListener(e -> {
-                    Toast.makeText(DashboardActivity.this, "Error updating Area 1 Name", Toast.LENGTH_SHORT).show();
-                    // Make field non-editable again even on failure
-                    disableEditing(etArea1, 1);
-                });
+        area1Name = capitalizeAreaName(area1Name);
+        
+        // Show confirmation dialog
+        showAreaNameChangeConfirmation("Area 1", area1Name, 1);
     }
     private String capitalizeFirstLetter(String str) {
         if (str == null || str.isEmpty()) {
@@ -910,24 +1041,28 @@ public class DashboardActivity extends AppCompatActivity {
 
     // Enable editing for the specified EditText
     private void enableEditing(EditText editText, int areaNumber) {
+        // Store the original name before editing starts
+        String currentText = editText.getText().toString().trim();
+        switch (areaNumber) {
+            case 1:
+                originalArea1Name = currentText;
+                isArea1Editable = true;
+                break;
+            case 2:
+                originalArea2Name = currentText;
+                isArea2Editable = true;
+                break;
+            case 3:
+                originalArea3Name = currentText;
+                isArea3Editable = true;
+                break;
+        }
+        
         editText.setFocusable(true);
         editText.setFocusableInTouchMode(true);
         editText.setClickable(true);
         editText.setCursorVisible(true);
         editText.requestFocus();
-        
-        // Set the appropriate editable flag
-        switch (areaNumber) {
-            case 1:
-                isArea1Editable = true;
-                break;
-            case 2:
-                isArea2Editable = true;
-                break;
-            case 3:
-                isArea3Editable = true;
-                break;
-        }
         
         // Add OnEditorActionListener to handle Enter key
         editText.setOnEditorActionListener((v, actionId, event) -> {
@@ -980,21 +1115,10 @@ public class DashboardActivity extends AppCompatActivity {
             Toast.makeText(DashboardActivity.this, "Area 2 Name cannot be empty!", Toast.LENGTH_SHORT).show();
             return;
         }
-        area2Name = capitalizeFirstLetter(area2Name);
-        DatabaseReference systemSettingsRef = db.child("system_settings");
-        systemSettingsRef.child("area2_name").setValue(area2Name)
-                .addOnSuccessListener(aVoid -> {
-                    // Clear focus after successful update
-                    etArea2.clearFocus();
-                    Toast.makeText(DashboardActivity.this, "Area 2 Name updated", Toast.LENGTH_SHORT).show();
-                    // Make field non-editable again after successful update
-                    disableEditing(etArea2, 2);
-                })
-                .addOnFailureListener(e -> {
-                    Toast.makeText(DashboardActivity.this, "Error updating Area 2 Name", Toast.LENGTH_SHORT).show();
-                    // Make field non-editable again even on failure
-                    disableEditing(etArea2, 2);
-                });
+        area2Name = capitalizeAreaName(area2Name);
+        
+        // Show confirmation dialog
+        showAreaNameChangeConfirmation("Area 2", area2Name, 2);
     }
     private void updateArea3Name() {
         String area3Name = etArea3.getText().toString().trim();
@@ -1002,21 +1126,179 @@ public class DashboardActivity extends AppCompatActivity {
             Toast.makeText(DashboardActivity.this, "Area 3 Name cannot be empty!", Toast.LENGTH_SHORT).show();
             return;
         }
-        area3Name = capitalizeFirstLetter(area3Name);
+        area3Name = capitalizeAreaName(area3Name);
+        
+        // Show confirmation dialog
+        showAreaNameChangeConfirmation("Area 3", area3Name, 3);
+    }
+
+    // Show confirmation dialog for area name change
+    private void showAreaNameChangeConfirmation(String areaLabel, String newName, int areaNumber) {
+        // Capitalize the name for display
+        String capitalizedName = capitalizeAreaName(newName);
+        
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("Confirm Area Name Change")
+                .setMessage("Are you sure you want to change " + areaLabel + " name to \"" + capitalizedName + "\"?\n\n" +
+                           "This action will update the database and may affect data tracking.")
+                .setPositiveButton("Yes, Update", (dialog, which) -> {
+                    // User confirmed, proceed with database update
+                    updateAreaNameInDatabase(newName, areaNumber);
+                })
+                .setNegativeButton("Cancel", (dialog, which) -> {
+                    // User cancelled, restore original name and disable editing
+                    restoreOriginalName(areaNumber);
+                    disableEditingForArea(areaNumber);
+                    dialog.dismiss();
+                })
+                .setCancelable(false)
+                .show();
+    }
+
+    // Update area name in database with history tracking
+    private void updateAreaNameInDatabase(String newName, int areaNumber) {
+        // Capitalize the area name properly
+        newName = capitalizeAreaName(newName);
         DatabaseReference systemSettingsRef = db.child("system_settings");
-        systemSettingsRef.child("area3_name").setValue(area3Name)
+        
+        // Create timestamp
+        String timestamp = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault())
+                .format(new java.util.Date());
+        
+        // Get the original name (before editing started) to store in history
+        String originalName = getOriginalAreaName(areaNumber);
+        
+        // Get the appropriate field names
+        String fieldName = "area" + areaNumber + "_name";
+        String historyFieldName = "area" + areaNumber + "_history";
+        
+        // Update the current area name
+        systemSettingsRef.child(fieldName).setValue(newName);
+        
+        // Create history entry under the "name" child
+        DatabaseReference nameRef = systemSettingsRef.child("name");
+        DatabaseReference historyRef = nameRef.child(historyFieldName);
+        
+        // Create a new history entry with timestamp
+        String historyKey = timestamp.replace(" ", "_").replace(":", "-"); // Make it a valid Firebase key
+        DatabaseReference newHistoryEntry = historyRef.child(historyKey);
+        
+        // Store both the name and timestamp in the history
+        newHistoryEntry.child("name").setValue(newName);
+        newHistoryEntry.child("timestamp").setValue(timestamp);
+        String finalNewName = newName;
+        newHistoryEntry.child("previous_name").setValue(originalName)
                 .addOnSuccessListener(aVoid -> {
-                    // Clear focus after successful update
-                    etArea3.clearFocus();
-                    Toast.makeText(DashboardActivity.this, "Area 3 Name updated", Toast.LENGTH_SHORT).show();
+                    // Update EditText with capitalized name
+                    EditText editText = getEditTextForArea(areaNumber);
+                    if (editText != null) {
+                        editText.setText(finalNewName);
+                        editText.clearFocus();
+                    }
+                    
+                    Toast.makeText(DashboardActivity.this, 
+                            "Area " + areaNumber + " name updated successfully!", Toast.LENGTH_SHORT).show();
+                    
                     // Make field non-editable again after successful update
-                    disableEditing(etArea3, 3);
+                    disableEditingForArea(areaNumber);
                 })
                 .addOnFailureListener(e -> {
-                    Toast.makeText(DashboardActivity.this, "Error updating Area 3 Name", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(DashboardActivity.this, 
+                            "Error updating Area " + areaNumber + " name", Toast.LENGTH_SHORT).show();
+                    
                     // Make field non-editable again even on failure
-                    disableEditing(etArea3, 3);
+                    disableEditingForArea(areaNumber);
                 });
+    }
+
+    // Get the current area name from the EditText
+    private String getCurrentAreaName(int areaNumber) {
+        EditText editText = getEditTextForArea(areaNumber);
+        if (editText != null) {
+            return editText.getText().toString().trim();
+        }
+        return "";
+    }
+
+    // Get the original area name (before editing started)
+    private String getOriginalAreaName(int areaNumber) {
+        switch (areaNumber) {
+            case 1:
+                return originalArea1Name;
+            case 2:
+                return originalArea2Name;
+            case 3:
+                return originalArea3Name;
+            default:
+                return "";
+        }
+    }
+
+    // Get the appropriate EditText for the area number
+    private EditText getEditTextForArea(int areaNumber) {
+        switch (areaNumber) {
+            case 1: return etArea1;
+            case 2: return etArea2;
+            case 3: return etArea3;
+            default: return null;
+        }
+    }
+
+    /**
+     * Capitalize area name properly (first letter of each word)
+     */
+    private String capitalizeAreaName(String name) {
+        if (name == null || name.trim().isEmpty()) {
+            return name;
+        }
+        
+        String trimmed = name.trim();
+        String[] words = trimmed.split("\\s+");
+        StringBuilder result = new StringBuilder();
+        
+        for (int i = 0; i < words.length; i++) {
+            if (i > 0) {
+                result.append(" ");
+            }
+            
+            String word = words[i];
+            if (word.length() > 0) {
+                result.append(Character.toUpperCase(word.charAt(0)));
+                if (word.length() > 1) {
+                    result.append(word.substring(1).toLowerCase());
+                }
+            }
+        }
+        
+        return result.toString();
+    }
+
+    // Disable editing for the specified area
+    private void disableEditingForArea(int areaNumber) {
+        EditText editText = getEditTextForArea(areaNumber);
+        if (editText != null) {
+            disableEditing(editText, areaNumber);
+        }
+    }
+
+    // Restore the original name when user cancels editing
+    private void restoreOriginalName(int areaNumber) {
+        EditText editText = getEditTextForArea(areaNumber);
+        if (editText != null) {
+            String originalName = "";
+            switch (areaNumber) {
+                case 1:
+                    originalName = originalArea1Name;
+                    break;
+                case 2:
+                    originalName = originalArea2Name;
+                    break;
+                case 3:
+                    originalName = originalArea3Name;
+                    break;
+            }
+            editText.setText(originalName);
+        }
     }
     private void fetchAreaNames() {
         DatabaseReference areaNamesRef = db.child("system_settings");
@@ -1167,8 +1449,11 @@ public class DashboardActivity extends AppCompatActivity {
 
                             // Set the corresponding percentages for each area in separate TextViews
                             tvArea1Percentage.setText(formattedArea1Percentage );
+                            tvPercent1.setText(formattedArea1Percentage + " %");
                             tvArea2Percentage.setText(formattedArea2Percentage );
+                            tvPercent2.setText(formattedArea2Percentage + " %");
                             tvArea3Percentage.setText(formattedArea3Percentage );
+                            tvPercent3.setText(formattedArea3Percentage + " %");
                         }
 
                         @Override

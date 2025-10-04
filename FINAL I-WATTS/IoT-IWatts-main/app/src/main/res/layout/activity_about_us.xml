@@ -90,7 +90,7 @@
                     android:textSize="16sp"
                     android:textColor="#863B17"
                     android:lineSpacingExtra="4dp"
-                    android:gravity="center"
+                    android:justificationMode="inter_character"
                     android:layout_marginBottom="20dp" />
 
                 <!-- Main Features Title -->

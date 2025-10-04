@@ -279,16 +279,36 @@
                 android:padding="20dp"
                 android:gravity="center_vertical">
 
-                <!-- Area Icon -->
-                <TextView
-                    android:id="@+id/area1_icon"
-                    android:layout_width="48dp"
-                    android:layout_height="48dp"
-                    android:text="🏠"
-                    android:textSize="24sp"
-                    android:gravity="center"
-                    android:background="@drawable/bg_yellowish"
-                    android:layout_marginEnd="16dp"/>
+                <!-- Icon + Percent vertically aligned -->
+                <LinearLayout
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:gravity="center_horizontal"
+                    android:layout_marginEnd="20dp">
+
+                    <TextView
+                        android:id="@+id/area1_icon"
+                        android:layout_width="48dp"
+                        android:layout_height="48dp"
+                        android:text="🏠"
+                        android:textSize="24sp"
+                        android:gravity="center"
+                        android:background="@drawable/bg_yellowish" />
+
+                    <TextView
+                        android:id="@+id/tvPercent1"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="75%"
+                        android:textColor="#863B17"
+                        android:textSize="13sp"
+                        android:textStyle="bold"
+                        android:alpha="0.9"
+                        android:layout_marginTop="4dp"/>
+                </LinearLayout>
+
+
 
                 <!-- Area Info -->
                 <LinearLayout
@@ -307,6 +327,8 @@
                         android:textColorHint="#863B17"
                         android:background="@color/white"
                         android:textColor="#863B17"
+                        android:imeOptions="actionDone"
+                        android:singleLine="true"
                         android:textSize="17sp"
                         android:drawableEnd="@drawable/ic_edit"
                         android:drawableTint="#863B17"/>
@@ -348,16 +370,33 @@
                 android:padding="20dp"
                 android:gravity="center_vertical">
 
-                <!-- Area Icon -->
-                <TextView
-                    android:id="@+id/area2_icon"
-                    android:layout_width="48dp"
-                    android:layout_height="48dp"
-                    android:text="🏠"
-                    android:textSize="24sp"
-                    android:gravity="center"
-                    android:background="@drawable/bg_yellowish"
-                    android:layout_marginEnd="16dp"/>
+                <LinearLayout
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:gravity="center_horizontal"
+                    android:layout_marginEnd="20dp">
+
+                    <TextView
+                        android:id="@+id/area2_icon"
+                        android:layout_width="48dp"
+                        android:layout_height="48dp"
+                        android:text="🏠"
+                        android:textSize="24sp"
+                        android:gravity="center"
+                        android:background="@drawable/bg_yellowish" />
+
+                    <TextView
+                        android:id="@+id/tvPercent2"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="75%"
+                        android:textColor="#863B17"
+                        android:textSize="13sp"
+                        android:textStyle="bold"
+                        android:alpha="0.9"
+                        android:layout_marginTop="4dp"/>
+                </LinearLayout>
 
                 <!-- Area Info -->
                 <LinearLayout
@@ -376,10 +415,11 @@
                         android:textColorHint="#863B17"
                         android:background="@color/white"
                         android:textColor="#863B17"
+                        android:imeOptions="actionDone"
+                        android:singleLine="true"
                         android:textSize="17sp"
                         android:drawableEnd="@drawable/ic_edit"
                         android:drawableTint="#863B17"/>
-
 
                     <TextView
                         android:layout_width="wrap_content"
@@ -417,16 +457,33 @@
                 android:padding="20dp"
                 android:gravity="center_vertical">
 
-                <!-- Area Icon -->
-                <TextView
-                    android:id="@+id/area3_icon"
-                    android:layout_width="48dp"
-                    android:layout_height="48dp"
-                    android:text="🏠"
-                    android:textSize="24sp"
-                    android:gravity="center"
-                    android:background="@drawable/bg_yellowish"
-                    android:layout_marginEnd="16dp"/>
+                <LinearLayout
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:gravity="center_horizontal"
+                    android:layout_marginEnd="20dp">
+
+                    <TextView
+                        android:id="@+id/area3_icon"
+                        android:layout_width="48dp"
+                        android:layout_height="48dp"
+                        android:text="🏠"
+                        android:textSize="24sp"
+                        android:gravity="center"
+                        android:background="@drawable/bg_yellowish" />
+
+                    <TextView
+                        android:id="@+id/tvPercent3"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="75%"
+                        android:textColor="#863B17"
+                        android:textSize="13sp"
+                        android:textStyle="bold"
+                        android:alpha="0.9"
+                        android:layout_marginTop="4dp"/>
+                </LinearLayout>
 
                 <!-- Area Info -->
                 <LinearLayout
@@ -446,6 +503,8 @@
                         android:textColor="#863B17"
                         android:textSize="17sp"
                         android:textStyle="bold"
+                        android:imeOptions="actionDone"
+                        android:singleLine="true"
                         android:drawableEnd="@drawable/ic_edit"
                         android:drawableTint="#863B17"/>
 

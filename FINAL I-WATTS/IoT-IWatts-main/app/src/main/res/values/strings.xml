@@ -159,27 +159,32 @@
     I-WATTS: An IoT-Based Smart Power Monitoring System was developed by a team of Bachelor of Science in Information Technology students from STI College Lipa.
     The project was created with the vision of helping households and communities gain better control over their electricity consumption through real-time monitoring,
     cost estimation, and smart alerts.&#10;&#10;
-
+\n
     As developers, we share a commitment to using technology for practical solutions that address real problems faced by Filipino households—particularly the challenges
     of high electricity costs, lack of real-time usage awareness, and inefficient consumption management.&#10;&#10;
 \n\n
     <b>The Development Team</b>&#10;&#10;
+    \n\n
     • Chareze M. Hirang&#10;
+    \n
     Applied technical expertise to build the system’s foundation, ensuring smooth integration between hardware, software, and cloud services.&#10;&#10;
 
+    \n\n
     • Nina Victoria C. Mercado&#10;
+    \n
     Contributed efficiency and organization, guiding the group through every stage of the research and development process.&#10;&#10;
-
+\n\n
     • John Russel V. Reyes&#10;
+    \n
     Brought creativity and innovation to the project, ensuring that the system’s design and functionality were both practical and user-friendly.&#10;&#10;
-
-    • Joshua Edwin Bryan F. Zara&#10;
+\n\n
+    • Joshua Edwin Bryan F. Zara&#10;\n
     Focused on the hardware side of the project, assembling and testing the components to guarantee accurate and reliable performance.&#10;&#10;
-
+\n\n
     <b>Our Mission</b>&#10;
-    To empower households with the tools to monitor, understand, and optimize their electricity usage, leading to cost savings, improved efficiency, and a more sustainable lifestyle.&#10;&#10;
-
-    <b>Our Vision</b>&#10;
+    \nTo empower households with the tools to monitor, understand, and optimize their electricity usage, leading to cost savings, improved efficiency, and a more sustainable lifestyle.&#10;&#10;
+\n\n
+    <b>Our Vision</b>&#10;\n
     To contribute to smarter, energy-conscious communities by innovating technological solutions that bridge the gap between electricity consumption and real-time awareness.
 </string>
     <string name="about_version">Version 1.0.0</string>

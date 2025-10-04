@@ -109,6 +109,14 @@ public class HistoricalDataActivity extends AppCompatActivity {
     // Data storage
     private Map<String, List<Map<String, Object>>> historicalData; // key "days" -> list of per-day maps
     private double electricityRate = 9.85; // Default BATELEC II rate
+    
+    // Area names storage
+    private String area1Name = "Area 1";
+    private String area2Name = "Area 2";
+    private String area3Name = "Area 3";
+    
+    // Area name history storage
+    private Map<String, List<Map<String, Object>>> areaNameHistory = new HashMap<>();
 
     private NavigationDrawerHelper drawerHelper;
 
@@ -152,6 +160,7 @@ public class HistoricalDataActivity extends AppCompatActivity {
         initializeDates();
         setupDatePickers();
         setupChartContainers();
+        fetchAreaNamesAndHistory();
         loadHistoricalData();
 
         closeDaily = findViewById(R.id.closeDaily);
@@ -245,6 +254,160 @@ public class HistoricalDataActivity extends AppCompatActivity {
 
 
 
+
+    /**
+     * Fetch area names and name history from Firebase system_settings
+     */
+    private void fetchAreaNamesAndHistory() {
+        try {
+            DatabaseReference systemSettingsRef = FirebaseDatabase.getInstance()
+                    .getReference("system_settings");
+
+            systemSettingsRef.addListenerForSingleValueEvent(new ValueEventListener() {
+                @Override
+                public void onDataChange(@NonNull DataSnapshot snapshot) {
+                    // Fetch current area names
+                    String fetchedArea1Name = snapshot.child("area1_name").getValue(String.class);
+                    String fetchedArea2Name = snapshot.child("area2_name").getValue(String.class);
+                    String fetchedArea3Name = snapshot.child("area3_name").getValue(String.class);
+
+                    // Use fetched names or keep defaults
+                    if (fetchedArea1Name != null && !fetchedArea1Name.trim().isEmpty()) {
+                        area1Name = fetchedArea1Name;
+                    }
+                    if (fetchedArea2Name != null && !fetchedArea2Name.trim().isEmpty()) {
+                        area2Name = fetchedArea2Name;
+                    }
+                    if (fetchedArea3Name != null && !fetchedArea3Name.trim().isEmpty()) {
+                        area3Name = fetchedArea3Name;
+                    }
+
+                    // Fetch name history
+                    DataSnapshot nameSnapshot = snapshot.child("name");
+                    if (nameSnapshot.exists()) {
+                        processNameHistory(nameSnapshot);
+                    }
+
+                    Log.d(TAG, "Area names loaded: " + area1Name + ", " + area2Name + ", " + area3Name);
+                }
+
+                @Override
+                public void onCancelled(@NonNull DatabaseError error) {
+                    Log.w(TAG, "Failed to fetch area names: " + error.getMessage());
+                    // Keep default names
+                }
+            });
+        } catch (Exception e) {
+            Log.e(TAG, "Error fetching area names", e);
+        }
+    }
+
+    /**
+     * Process name history data from Firebase
+     */
+    private void processNameHistory(DataSnapshot nameSnapshot) {
+        try {
+            areaNameHistory.clear();
+            
+            // Process each area's name history
+            String[] areaKeys = {"area1_history", "area2_history", "area3_history"};
+            
+            for (String areaKey : areaKeys) {
+                DataSnapshot areaHistorySnapshot = nameSnapshot.child(areaKey);
+                List<Map<String, Object>> historyList = new ArrayList<>();
+                
+                if (areaHistorySnapshot.exists()) {
+                    for (DataSnapshot historyEntry : areaHistorySnapshot.getChildren()) {
+                        Map<String, Object> entry = new HashMap<>();
+                        entry.put("timestamp", historyEntry.child("timestamp").getValue(String.class));
+                        entry.put("name", historyEntry.child("name").getValue(String.class));
+                        entry.put("previous_name", historyEntry.child("previous_name").getValue(String.class));
+                        historyList.add(entry);
+                    }
+                }
+                
+                areaNameHistory.put(areaKey, historyList);
+            }
+            
+            Log.d(TAG, "Name history loaded for " + areaNameHistory.size() + " areas");
+        } catch (Exception e) {
+            Log.e(TAG, "Error processing name history", e);
+        }
+    }
+
+    /**
+     * Get the area name that was active on a specific date
+     */
+    private String getAreaNameForDate(int areaNumber, String date) {
+        try {
+            String historyKey = "area" + areaNumber + "_history";
+            List<Map<String, Object>> historyList = areaNameHistory.get(historyKey);
+            
+            if (historyList == null || historyList.isEmpty()) {
+                // No history, return current name
+                switch (areaNumber) {
+                    case 1: return area1Name;
+                    case 2: return area2Name;
+                    case 3: return area3Name;
+                    default: return "Area " + areaNumber;
+                }
+            }
+            
+            // Parse the target date
+            Date targetDate = firebaseFormat.parse(date);
+            if (targetDate == null) {
+                return "Area " + areaNumber;
+            }
+            
+            // Find the most recent name change before or on the target date
+            String activeName = null;
+            for (Map<String, Object> entry : historyList) {
+                String timestamp = (String) entry.get("timestamp");
+                if (timestamp != null) {
+                    try {
+                        // Parse timestamp (assuming format like "2024-09-20 14:30:00")
+                        SimpleDateFormat timestampFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault());
+                        timestampFormat.setTimeZone(PHILIPPINE_TIMEZONE);
+                        Date changeDate = timestampFormat.parse(timestamp);
+                        
+                        if (changeDate != null && !changeDate.after(targetDate)) {
+                            activeName = (String) entry.get("name");
+                        }
+                    } catch (Exception e) {
+                        Log.w(TAG, "Error parsing timestamp: " + timestamp);
+                    }
+                }
+            }
+            
+            // If no history entry found, use the previous name from the first entry
+            if (activeName == null && !historyList.isEmpty()) {
+                Map<String, Object> firstEntry = historyList.get(0);
+                activeName = (String) firstEntry.get("previous_name");
+            }
+            
+            // Fallback to current name if still null
+            if (activeName == null || activeName.trim().isEmpty()) {
+                switch (areaNumber) {
+                    case 1: return area1Name;
+                    case 2: return area2Name;
+                    case 3: return area3Name;
+                    default: return "Area " + areaNumber;
+                }
+            }
+            
+            return activeName;
+            
+        } catch (Exception e) {
+            Log.e(TAG, "Error getting area name for date " + date + ": " + e.getMessage());
+            // Fallback to current name
+            switch (areaNumber) {
+                case 1: return area1Name;
+                case 2: return area2Name;
+                case 3: return area3Name;
+                default: return "Area " + areaNumber;
+            }
+        }
+    }
 
     /**
      * Initialize default date range (last 7 days) using Philippine timezone
@@ -467,6 +630,7 @@ public class HistoricalDataActivity extends AppCompatActivity {
                         Double dayConsumption = getDoubleValue(dayData.get("total_kwh"));     // NOT total_energy_kwh
                         Double dayCost = getDoubleValue(dayData.get("total_cost"));          // NOT total_cost_php
                         Double dayPeak = getDoubleValue(dayData.get("peak_watts"));
+                        String peakTime = (String) dayData.get("peak_time");
 
                         if (dayConsumption != null) {
                             totalConsumption += dayConsumption;
@@ -533,14 +697,23 @@ public class HistoricalDataActivity extends AppCompatActivity {
                         reportItem.put("kwh", dayConsumption != null ? dayConsumption : 0.0);
                         reportItem.put("cost", dayCost != null ? dayCost : 0.0);
                         reportItem.put("peak_watts", dayPeak != null ? dayPeak : 0.0);
-                        // Optional area fields (tolerant to missing data)
+                        reportItem.put("peak_time", peakTime != null ? peakTime : "--:--");
+                        
+                        // Store area breakdown data for this day
                         Map<String, Object> areaBreakdownCopy = new HashMap<>();
-                        Object a1Obj = dayData.get("area1_kwh");
-                        Object a2Obj = dayData.get("area2_kwh");
-                        Object a3Obj = dayData.get("area3_kwh");
-                        if (a1Obj != null) areaBreakdownCopy.put("area1", getDoubleValue(a1Obj));
-                        if (a2Obj != null) areaBreakdownCopy.put("area2", getDoubleValue(a2Obj));
-                        if (a3Obj != null) areaBreakdownCopy.put("area3", getDoubleValue(a3Obj));
+                        if (areaBreakdown != null) {
+                            double area1Kwh = getAreaConsumption(areaBreakdown, "area1");
+                            double area2Kwh = getAreaConsumption(areaBreakdown, "area2");
+                            double area3Kwh = getAreaConsumption(areaBreakdown, "area3");
+                            
+                            areaBreakdownCopy.put("area1", area1Kwh);
+                            areaBreakdownCopy.put("area2", area2Kwh);
+                            areaBreakdownCopy.put("area3", area3Kwh);
+                            
+                            Log.d(TAG, "Storing area data for " + dateKey + ": A1=" + area1Kwh + ", A2=" + area2Kwh + ", A3=" + area3Kwh);
+                        } else {
+                            Log.w(TAG, "No area breakdown data for " + dateKey);
+                        }
                         reportItem.put("areas", areaBreakdownCopy);
                         daysList.add(reportItem);
                     }
@@ -765,21 +938,21 @@ public class HistoricalDataActivity extends AppCompatActivity {
             if (area1Chart != null) {
                 List<Double> area1Data = areaDailyData.get("area1");  // ✅ Renamed
                 if (area1Data != null && !area1Data.isEmpty()) {
-                    setupAreaDailyChart(area1Chart, area1Data, dateLabels, "Area 1", Color.rgb(255, 193, 7));  // ✅ Renamed method
+                    setupAreaDailyChart(area1Chart, area1Data, dateLabels, area1Name, Color.rgb(255, 193, 7));  // ✅ Renamed method
                 }
             }
 
             if (area2Chart != null) {
                 List<Double> area2Data = areaDailyData.get("area2");  // ✅ Renamed
                 if (area2Data != null && !area2Data.isEmpty()) {
-                    setupAreaDailyChart(area2Chart, area2Data, dateLabels, "Area 2", Color.rgb(220, 53, 69));  // ✅ Renamed method
+                    setupAreaDailyChart(area2Chart, area2Data, dateLabels, area2Name, Color.rgb(220, 53, 69));  // ✅ Renamed method
                 }
             }
 
             if (area3Chart != null) {
                 List<Double> area3Data = areaDailyData.get("area3");  // ✅ Renamed
                 if (area3Data != null && !area3Data.isEmpty()) {
-                    setupAreaDailyChart(area3Chart, area3Data, dateLabels, "Area 3", Color.rgb(40, 167, 69));  // ✅ Renamed method
+                    setupAreaDailyChart(area3Chart, area3Data, dateLabels, area3Name, Color.rgb(40, 167, 69));  // ✅ Renamed method
                 }
             }
 
@@ -1045,17 +1218,34 @@ public class HistoricalDataActivity extends AppCompatActivity {
                 addReportRow(card, "kWh", String.format(Locale.getDefault(), "%.2f", (Double) d.get("kwh")));
                 addReportRow(card, "Cost", String.format(Locale.getDefault(), "₱ %.2f", (Double) d.get("cost")));
                 addReportRow(card, "Peak", String.format(Locale.getDefault(), "%.0f W", (Double) d.get("peak_watts")));
+                
+                // Add peak time if available
+                String peakTime = (String) d.get("peak_time");
+                if (peakTime != null && !peakTime.equals("--:--") && !peakTime.trim().isEmpty()) {
+                    addReportRow(card, "Peak Time", formatPeakTime(peakTime));
+                }
 
                 Object areasObj = d.get("areas");
                 if (areasObj instanceof Map) {
                     Map<String, Object> ar = (Map<String, Object>) areasObj;
                     boolean hasAny = false;
+                    String dateStr = (String) d.get("date");
                     Double a1 = getDoubleValue(ar.get("area1"));
                     Double a2 = getDoubleValue(ar.get("area2"));
                     Double a3 = getDoubleValue(ar.get("area3"));
-                    if (a1 != null && a1 > 0) { addReportRow(card, "Area 1", formatArea(a1)); hasAny = true; }
-                    if (a2 != null && a2 > 0) { addReportRow(card, "Area 2", formatArea(a2)); hasAny = true; }
-                    if (a3 != null && a3 > 0) { addReportRow(card, "Area 3", formatArea(a3)); hasAny = true; }
+                    
+                    // Get the area names that were active on this specific date
+                    String area1NameForDate = getAreaNameForDate(1, dateStr);
+                    String area2NameForDate = getAreaNameForDate(2, dateStr);
+                    String area3NameForDate = getAreaNameForDate(3, dateStr);
+                    
+                    Log.d(TAG, "Date " + dateStr + " - Area 1: " + a1 + " (" + area1NameForDate + 
+                          "), Area 2: " + a2 + " (" + area2NameForDate + 
+                          "), Area 3: " + a3 + " (" + area3NameForDate + ")");
+                    
+                    if (a1 != null && a1 > 0) { addReportRow(card, area1NameForDate, formatArea(a1)); hasAny = true; }
+                    if (a2 != null && a2 > 0) { addReportRow(card, area2NameForDate, formatArea(a2)); hasAny = true; }
+                    if (a3 != null && a3 > 0) { addReportRow(card, area3NameForDate, formatArea(a3)); hasAny = true; }
                     // If there is no area breakdown in DB, simply skip area rows
                     if (!hasAny) {
                         // no-op
@@ -1378,7 +1568,7 @@ public class HistoricalDataActivity extends AppCompatActivity {
             } else if (line.matches("\\\\d{4}-\\\\d{2}-\\\\d{2}")) {
                 doc.append(spacer());
                 doc.append(p(line, true, 18, "left"));
-            } else if (line.startsWith("Area 2 ") || line.startsWith("Area 3 ")) {
+                } else if (line.startsWith("Area 2 ") || line.startsWith("Area 3 ")) {
                 // add spacing before new area blocks
                 doc.append(spacer());
                 doc.append(p(line, false, 12, "left"));
@@ -1478,6 +1668,40 @@ public class HistoricalDataActivity extends AppCompatActivity {
         Double d = getDoubleValue(v);
         if (d == null) d = 0.0;
         return String.format(Locale.getDefault(), "%.2f kWh", d);
+    }
+
+    /**
+     * Format peak time for display (convert 24-hour to 12-hour format)
+     */
+    private String formatPeakTime(String rawTime) {
+        try {
+            if (rawTime == null || rawTime.trim().isEmpty() || rawTime.equals("--:--")) {
+                return "--:--";
+            }
+            
+            // Parse the time (assuming format like "14:30" or "14:30:00")
+            SimpleDateFormat inputFormat = new SimpleDateFormat("HH:mm", Locale.getDefault());
+            inputFormat.setTimeZone(PHILIPPINE_TIMEZONE);
+            
+            // Handle different time formats
+            if (rawTime.length() > 5) {
+                inputFormat = new SimpleDateFormat("HH:mm:ss", Locale.getDefault());
+                inputFormat.setTimeZone(PHILIPPINE_TIMEZONE);
+            }
+            
+            Date time = inputFormat.parse(rawTime);
+            if (time != null) {
+                // Format as 12-hour with AM/PM
+                SimpleDateFormat outputFormat = new SimpleDateFormat("h:mm a", Locale.getDefault());
+                outputFormat.setTimeZone(PHILIPPINE_TIMEZONE);
+                return outputFormat.format(time);
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "Error formatting peak time: " + rawTime + " - " + e.getMessage());
+        }
+        
+        // Return original if formatting fails
+        return rawTime;
     }
 
 }

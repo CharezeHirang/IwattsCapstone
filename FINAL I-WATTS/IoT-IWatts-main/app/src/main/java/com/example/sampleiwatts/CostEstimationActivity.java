@@ -1,12 +1,15 @@
 package com.example.sampleiwatts;
 
+import android.app.AlertDialog;
 import android.app.DatePickerDialog;
 import android.graphics.Color;
 import android.content.Intent;
 import android.icu.util.Calendar;
 import android.os.Bundle;
 import android.util.Log;
+import android.view.KeyEvent;
 import android.view.View;
+import android.view.inputmethod.InputMethodManager;
 import android.widget.EditText;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -53,6 +56,7 @@ import java.util.concurrent.TimeUnit;
 public class CostEstimationActivity extends AppCompatActivity {
     EditText etStartingDate, etEndingDate, etBatelecRate;
     TextView tvCostView, tvKwhView, tvElectricityRate, tvTotalUsage, tvDailyCost, tvArea1,tvArea2,tvArea3, tvProjectedText, tvProjectedCost, area1_name, area2_name, area3_name;
+    LinearLayout previousNumbers, previousRatesContainer;
     BarChart barChart;
     LinearLayout popDaily, popArea;
     HorizontalBarChart areaChart;
@@ -60,6 +64,9 @@ public class CostEstimationActivity extends AppCompatActivity {
     ImageView closeDaily, closeArea;
     private DatabaseReference db;
     private NavigationDrawerHelper drawerHelper;
+    
+    // Store original rate before editing
+    private String originalRate = "";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -133,15 +140,35 @@ public class CostEstimationActivity extends AppCompatActivity {
         tvArea2 = findViewById(R.id.tvArea2);
         tvArea3 = findViewById(R.id.tvArea3);
         tvDailyCost = findViewById(R.id.tvDailyCost);
-        tvTotalUsage = findViewById(R.id.tvTotalUsage);
         tvCostView = findViewById(R.id.tvTotalCost);
         tvKwhView = findViewById(R.id.tvTotalKwh);
         etBatelecRate = findViewById(R.id.etBatelecRate);
         etBatelecRate.setOnClickListener(v -> {
             updateElectricityRate();
         });
+        
+        // Store original rate when user starts editing (gets focus)
+        etBatelecRate.setOnFocusChangeListener((v, hasFocus) -> {
+            if (hasFocus && originalRate.isEmpty()) {
+                // Store the original value when user starts editing
+                originalRate = etBatelecRate.getText().toString().trim();
+            }
+        });
+        
+        // Add OnEditorActionListener to trigger warning only when user confirms (presses Enter/Done)
+        etBatelecRate.setOnEditorActionListener((v, actionId, event) -> {
+            if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_DONE || 
+                (event != null && event.getKeyCode() == android.view.KeyEvent.KEYCODE_ENTER)) {
+                // Show warning dialog before updating
+                showRateChangeWarning();
+                return true;
+            }
+            return false;
+        });
 
         tvElectricityRate = findViewById(R.id.tvBatelecRate);
+        previousNumbers = findViewById(R.id.previousNumbers);
+        previousRatesContainer = findViewById(R.id.previousRatesContainer);
         db = FirebaseDatabase.getInstance().getReference();
         ButtonNavigator.setupButtons(this, buttonLayout);
         etStartingDate = findViewById(R.id.etStartingDate);
@@ -176,6 +203,7 @@ public class CostEstimationActivity extends AppCompatActivity {
         fetchArea3Name();
         loadDailyCostChart();
         loadAreaCostChart();
+        fetchPreviousRateInfo();
 
     }
     private void startingDate() {
@@ -522,7 +550,6 @@ public class CostEstimationActivity extends AppCompatActivity {
                             String formattedKwh = String.format("%.3f", cumulativeKwh);
                             Log.d("KwhTotal", "Total KWh: " + formattedKwh);
                             tvKwhView.setText(formattedKwh + " kwh");
-                            tvTotalUsage.setText(formattedKwh);
                         }
 
                         @Override
@@ -575,6 +602,38 @@ public class CostEstimationActivity extends AppCompatActivity {
             }
         });
     }
+    private void showRateChangeWarning() {
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("Rate Change Warning")
+                .setMessage("Changing the electricity rate may affect the cost calculations and projected dates. Are you sure you want to continue?")
+                .setPositiveButton("Yes, Update", (dialog, which) -> {
+                    // Hide keyboard and remove focus
+                    etBatelecRate.clearFocus();
+                    InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+                    if (imm != null) {
+                        imm.hideSoftInputFromWindow(etBatelecRate.getWindowToken(), 0);
+                    }
+                    // User confirmed, proceed with the rate update
+                    updateElectricityRate();
+                })
+                .setNegativeButton("Cancel", (dialog, which) -> {
+                    // User cancelled, restore original value
+                    etBatelecRate.setText(originalRate);
+                    etBatelecRate.clearFocus();
+                    // Hide keyboard
+                    InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+                    if (imm != null) {
+                        imm.hideSoftInputFromWindow(etBatelecRate.getWindowToken(), 0);
+                    }
+                    // Reset original rate for next edit session
+                    originalRate = "";
+                })
+                .setCancelable(false);
+        
+        AlertDialog dialog = builder.create();
+        dialog.show();
+    }
+
     private void updateElectricityRate() {
         String updateElectricityRate = etBatelecRate.getText().toString().trim();
 
@@ -586,26 +645,297 @@ public class CostEstimationActivity extends AppCompatActivity {
 
         try {
             // Parse the rate as a double
-            double rate = Double.parseDouble(updateElectricityRate);
+            double newRate = Double.parseDouble(updateElectricityRate);
+            
+            // Get current rate for history tracking
+            String currentRateText = tvElectricityRate.getText().toString();
+            
+            // Extract current rate value
+            double currentRate = 0.0;
+            if (currentRateText.contains("₱") && currentRateText.contains("/")) {
+                try {
+                    String rateValue = currentRateText.replace("₱", "").replace("/ kWh", "").trim();
+                    currentRate = Double.parseDouble(rateValue);
+                } catch (NumberFormatException e) {
+                    // If we can't parse current rate, use 0
+                }
+            }
 
-            // Save the rate as a double to Firebase
-            DatabaseReference deviceRef = db.child("system_settings");
-            deviceRef.child("electricity_rate_per_kwh").setValue(rate)
-                    .addOnSuccessListener(aVoid -> {
-                        // Clear focus after successful update
-                        etBatelecRate.clearFocus();
-                        // Successfully updated the rate
-                        Toast.makeText(CostEstimationActivity.this, "Electricity Rate updated", Toast.LENGTH_SHORT).show();
-                    })
-                    .addOnFailureListener(e -> {
-                        // Handle the error
-                        Toast.makeText(CostEstimationActivity.this, "Error updating Electricity Rate", Toast.LENGTH_SHORT).show();
-                    });
+            // Create timestamp
+            String timestamp = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault())
+                    .format(new java.util.Date());
+
+            // Calculate kWh consumption for the previous rate period
+            calculateKwhForRatePeriod(currentRate, newRate, timestamp);
+
         } catch (NumberFormatException e) {
             // Handle the case where the input is not a valid number
             Toast.makeText(CostEstimationActivity.this, "Invalid Electricity Rate format", Toast.LENGTH_SHORT).show();
         }
     }
+    
+    private void calculateKwhForRatePeriod(double previousRate, double newRate, String timestamp) {
+        // Get the date range for calculation
+        DatabaseReference costFilterDateRef = db.child("cost_filter_date");
+        
+        costFilterDateRef.addListenerForSingleValueEvent(new ValueEventListener() {
+            @Override
+            public void onDataChange(DataSnapshot dataSnapshot) {
+                String startingDateString = dataSnapshot.child("starting_date").getValue(String.class);
+                String endingDateString = dataSnapshot.child("ending_date").getValue(String.class);
+                
+                if (startingDateString == null || endingDateString == null) {
+                    Toast.makeText(CostEstimationActivity.this, "Date range not set", Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                
+                // Calculate kWh consumption for the previous rate period
+                calculateKwhForPreviousRate(previousRate, newRate, timestamp, startingDateString, endingDateString);
+            }
+            
+            @Override
+            public void onCancelled(DatabaseError databaseError) {
+                Toast.makeText(CostEstimationActivity.this, "Error fetching date range", Toast.LENGTH_SHORT).show();
+            }
+        });
+    }
+    
+    private void calculateKwhForPreviousRate(double previousRate, double newRate, String timestamp, String startingDate, String endingDate) {
+        // Get the rate period information to calculate kWh for the specific period when previous rate was active
+        DatabaseReference consumptionInfoRef = db.child("system_settings").child("consumption_info").child("rate_changes");
+        
+        consumptionInfoRef.orderByKey().limitToLast(1).addListenerForSingleValueEvent(new ValueEventListener() {
+            @Override
+            public void onDataChange(DataSnapshot rateChangesSnapshot) {
+                String previousRatePeriodStart = startingDate; // Default to the filter start date
+                
+                if (rateChangesSnapshot.exists()) {
+                    // Get the most recent rate change to find when the previous rate period started
+                    for (DataSnapshot rateChangeSnapshot : rateChangesSnapshot.getChildren()) {
+                        String ratePeriodStart = rateChangeSnapshot.child("rate_period_start").getValue(String.class);
+                        if (ratePeriodStart != null) {
+                            previousRatePeriodStart = ratePeriodStart.split(" ")[0]; // Get just the date part
+                        }
+                        break;
+                    }
+                }
+                
+                // Now calculate kWh for the specific period when the previous rate was active
+                calculateKwhForSpecificPeriod(previousRate, newRate, timestamp, previousRatePeriodStart, endingDate);
+            }
+            
+            @Override
+            public void onCancelled(DatabaseError databaseError) {
+                // If we can't get rate period info, calculate for the entire filter period
+                calculateKwhForSpecificPeriod(previousRate, newRate, timestamp, startingDate, endingDate);
+            }
+        });
+    }
+    
+    private void calculateKwhForSpecificPeriod(double previousRate, double newRate, String timestamp, String periodStartDate, String periodEndDate) {
+        // Fetch hourly summaries to calculate kWh for the specific rate period
+        DatabaseReference hourlySummariesRef = db.child("hourly_summaries");
+        
+        hourlySummariesRef.orderByKey().addListenerForSingleValueEvent(new ValueEventListener() {
+            @Override
+            public void onDataChange(DataSnapshot dataSnapshot) {
+                double totalKwhForRatePeriod = 0.0;
+                
+                SimpleDateFormat dateFormatter = new SimpleDateFormat("yyyy-MM-dd", Locale.getDefault());
+                
+                try {
+                    Date startDate = dateFormatter.parse(periodStartDate);
+                    Date endDate = dateFormatter.parse(periodEndDate);
+                    
+                    // Calculate kWh consumption only for the specific rate period
+                    for (DataSnapshot dateSnapshot : dataSnapshot.getChildren()) {
+                        String dateKey = dateSnapshot.getKey();
+                        Date currentDate = null;
+                        try {
+                            currentDate = dateFormatter.parse(dateKey);
+                        } catch (ParseException e) {
+                            continue;
+                        }
+                        
+                        // Check if date is within the specific rate period range
+                        if (currentDate != null && !currentDate.before(startDate) && !currentDate.after(endDate)) {
+                            // Sum all hourly kWh for this date
+                            for (DataSnapshot hourSnapshot : dateSnapshot.getChildren()) {
+                                Double hourlyKwh = hourSnapshot.child("total_kwh").getValue(Double.class);
+                                if (hourlyKwh != null) {
+                                    totalKwhForRatePeriod += hourlyKwh;
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Store the rate change with calculated kWh for the specific period
+                    storeRateChangeWithKwh(previousRate, newRate, timestamp, totalKwhForRatePeriod, periodStartDate);
+                    
+                } catch (ParseException e) {
+                    Toast.makeText(CostEstimationActivity.this, "Error parsing dates", Toast.LENGTH_SHORT).show();
+                }
+            }
+            
+            @Override
+            public void onCancelled(DatabaseError databaseError) {
+                Toast.makeText(CostEstimationActivity.this, "Error fetching hourly data", Toast.LENGTH_SHORT).show();
+            }
+        });
+    }
+    
+    private void storeRateChangeWithKwh(double previousRate, double newRate, String timestamp, double previousKwh, String previousRatePeriodStart) {
+        // Store rate change history in consumption_info
+        DatabaseReference consumptionInfoRef = db.child("system_settings").child("consumption_info");
+        
+        // Create a new rate change entry
+        java.util.Map<String, Object> rateChangeEntry = new java.util.HashMap<>();
+        rateChangeEntry.put("timestamp", timestamp);
+        rateChangeEntry.put("previous_rate", previousRate);
+        rateChangeEntry.put("previous_kwh", previousKwh);
+        rateChangeEntry.put("new_rate", newRate);
+        rateChangeEntry.put("previous_rate_period_start", previousRatePeriodStart); // When the previous rate period started
+        rateChangeEntry.put("rate_period_start", timestamp); // When this new rate period starts
+        
+        // Push the new entry to the rate_changes node
+        consumptionInfoRef.child("rate_changes").push().setValue(rateChangeEntry)
+                .addOnSuccessListener(aVoid -> {
+                    // After storing history, update the current rate
+                    DatabaseReference deviceRef = db.child("system_settings");
+                    deviceRef.child("electricity_rate_per_kwh").setValue(newRate)
+                            .addOnSuccessListener(aVoid2 -> {
+                                // Clear focus after successful update
+                                etBatelecRate.clearFocus();
+                                // Successfully updated the rate
+                                Toast.makeText(CostEstimationActivity.this, "Electricity Rate updated", Toast.LENGTH_SHORT).show();
+                                // Refresh all calculations that depend on the rate
+                                method();
+                                // Reset original rate for next edit session
+                                originalRate = "";
+                            })
+                            .addOnFailureListener(e -> {
+                                // Handle the error
+                                Toast.makeText(CostEstimationActivity.this, "Error updating Electricity Rate", Toast.LENGTH_SHORT).show();
+                            });
+                })
+                .addOnFailureListener(e -> {
+                    // Handle the error
+                    Toast.makeText(CostEstimationActivity.this, "Error storing rate history", Toast.LENGTH_SHORT).show();
+                });
+    }
+    
+    private void fetchPreviousRateInfo() {
+        DatabaseReference consumptionInfoRef = db.child("system_settings").child("consumption_info").child("rate_changes");
+        
+        consumptionInfoRef.orderByKey().addListenerForSingleValueEvent(new ValueEventListener() {
+            @Override
+            public void onDataChange(DataSnapshot dataSnapshot) {
+                // Clear existing previous rate entries
+                previousNumbers.removeAllViews();
+                
+                if (dataSnapshot.exists() && dataSnapshot.getChildrenCount() > 0) {
+                    // Show the container
+                    previousRatesContainer.setVisibility(View.VISIBLE);
+                    
+                    // Get all rate changes and display them in reverse order (most recent first)
+                    java.util.List<DataSnapshot> rateChanges = new java.util.ArrayList<>();
+                    for (DataSnapshot rateChangeSnapshot : dataSnapshot.getChildren()) {
+                        rateChanges.add(rateChangeSnapshot);
+                    }
+                    
+                    // Reverse the list to show most recent first
+                    java.util.Collections.reverse(rateChanges);
+                    
+                    // Display each rate change
+                    for (DataSnapshot rateChangeSnapshot : rateChanges) {
+                        Double previousRate = rateChangeSnapshot.child("previous_rate").getValue(Double.class);
+                        Double previousKwh = rateChangeSnapshot.child("previous_kwh").getValue(Double.class);
+                        String timestamp = rateChangeSnapshot.child("timestamp").getValue(String.class);
+                        String previousRatePeriodStart = rateChangeSnapshot.child("previous_rate_period_start").getValue(String.class);
+                        
+                        if (previousRate != null && previousKwh != null) {
+                            // Create a new row for this rate change
+                            LinearLayout rateRow = createRateHistoryRow(previousRate, previousKwh, previousRatePeriodStart, timestamp);
+                            previousNumbers.addView(rateRow);
+                        }
+                    }
+                } else {
+                    // No previous rate history, hide the container
+                    previousRatesContainer.setVisibility(View.GONE);
+                }
+            }
+            
+            @Override
+            public void onCancelled(DatabaseError databaseError) {
+                // Hide previous rate display on error
+                previousRatesContainer.setVisibility(View.GONE);
+            }
+        });
+    }
+    
+    private LinearLayout createRateHistoryRow(double rate, double kwh, String periodStart, String timestamp) {
+        // Create the row layout
+        LinearLayout rowLayout = new LinearLayout(this);
+        rowLayout.setOrientation(LinearLayout.HORIZONTAL);
+        rowLayout.setLayoutParams(new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
+        rowLayout.setPadding(0, 4, 0, 4);
+        rowLayout.setWeightSum(6);
+        
+        // Create kWh TextView
+        TextView kwhTextView = new TextView(this);
+        kwhTextView.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 2));
+        kwhTextView.setText(String.format("%.3f kwh", kwh));
+        kwhTextView.setTextSize(12);
+        kwhTextView.setTextColor(getResources().getColor(R.color.brown));
+        kwhTextView.setAlpha(0.7f);
+        kwhTextView.setGravity(android.view.Gravity.CENTER);
+        rowLayout.addView(kwhTextView);
+        
+        // Create "dot" TextView
+        TextView dotTextView = new TextView(this);
+        dotTextView.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        dotTextView.setText("•");
+        dotTextView.setTextSize(12);
+        dotTextView.setTextColor(getResources().getColor(R.color.brown));
+        dotTextView.setAlpha(0.7f);
+        dotTextView.setGravity(android.view.Gravity.CENTER);
+        rowLayout.addView(dotTextView);
+        
+        // Create rate TextView with period
+        TextView rateTextView = new TextView(this);
+        rateTextView.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 3));
+        
+        String rateText = String.format("₱ %.2f / kWh", rate);
+        if (periodStart != null && timestamp != null) {
+            try {
+                SimpleDateFormat inputFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault());
+                SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd", Locale.getDefault());
+                SimpleDateFormat outputFormat = new SimpleDateFormat("MMM dd", Locale.getDefault());
+                
+                Date startDate = dateFormat.parse(periodStart);
+                Date endDate = inputFormat.parse(timestamp);
+                
+                String startDateFormatted = outputFormat.format(startDate);
+                String endDateFormatted = outputFormat.format(endDate);
+                
+                rateText = String.format("₱ %.2f / kWh (%s-%s)", rate, startDateFormatted, endDateFormatted);
+            } catch (ParseException e) {
+                // If parsing fails, just show the rate without date
+            }
+        }
+        
+        rateTextView.setText(rateText);
+        rateTextView.setTextSize(12);
+        rateTextView.setTextColor(getResources().getColor(R.color.brown));
+        rateTextView.setAlpha(0.7f);
+        rateTextView.setGravity(android.view.Gravity.CENTER);
+        rowLayout.addView(rateTextView);
+        
+        return rowLayout;
+    }
+    
     private void fetchTotalCostForDay() {
         SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd", Locale.getDefault());
         String currentDate = dateFormat.format(new Date());
@@ -620,7 +950,7 @@ public class CostEstimationActivity extends AppCompatActivity {
                         totalCost += ((Number) value).doubleValue();
                     }
                 }
-                tvDailyCost.setText(String.format("%.2f", totalCost));
+                tvDailyCost.setText(String.format("₱ %.2f", totalCost));
             }
             @Override
             public void onCancelled(DatabaseError databaseError) {
@@ -699,9 +1029,20 @@ public class CostEstimationActivity extends AppCompatActivity {
                                     double percentageArea2 = (totalConsumption == 0) ? 0 : (totalArea2Kwh[0] / totalConsumption) * 100;
                                     double percentageArea3 = (totalConsumption == 0) ? 0 : (totalArea3Kwh[0] / totalConsumption) * 100;
 
-                                    double totalCostArea1 = totalArea1Kwh[0] * electricityRatePerKwh;
-                                    double totalCostArea2 = totalArea2Kwh[0] * electricityRatePerKwh;
-                                    double totalCostArea3 = totalArea3Kwh[0] * electricityRatePerKwh;
+                                    // Get the total cost from tvCostView
+                                    String totalCostText = tvCostView.getText().toString();
+                                    double totalCost = 0.0;
+                                    try {
+                                        // Extract numeric value from "₱ X.XX" format
+                                        String cleanCost = totalCostText.replace("₱", "").replace(",", "").trim();
+                                        totalCost = Double.parseDouble(cleanCost);
+                                    } catch (NumberFormatException e) {
+                                        Log.e("CostEstimation", "Error parsing total cost: " + totalCostText);
+                                    }
+
+                                    double totalCostArea1 = (percentageArea1 / 100.0) * totalCost;
+                                    double totalCostArea2 = (percentageArea2 / 100.0) * totalCost;
+                                    double totalCostArea3 = (percentageArea3 / 100.0) * totalCost;
 
                                     tvArea1.setText("₱ " + String.format("%.2f", totalCostArea1) + " (" + String.format("%.2f", percentageArea1) + "%)");
                                     tvArea2.setText("₱ " + String.format("%.2f", totalCostArea2) + " (" + String.format("%.2f", percentageArea2) + "%)");
@@ -1094,10 +1435,26 @@ public class CostEstimationActivity extends AppCompatActivity {
                                         }
                                     }
 
-                                    // Convert to cost
-                                    double totalCostArea1 = totalArea1Kwh[0] * electricityRatePerKwh;
-                                    double totalCostArea2 = totalArea2Kwh[0] * electricityRatePerKwh;
-                                    double totalCostArea3 = totalArea3Kwh[0] * electricityRatePerKwh;
+                                    // Calculate percentages and convert to cost using percentage * total cost
+                                    double totalConsumption = totalArea1Kwh[0] + totalArea2Kwh[0] + totalArea3Kwh[0];
+                                    double percentageArea1 = (totalConsumption == 0) ? 0 : (totalArea1Kwh[0] / totalConsumption) * 100;
+                                    double percentageArea2 = (totalConsumption == 0) ? 0 : (totalArea2Kwh[0] / totalConsumption) * 100;
+                                    double percentageArea3 = (totalConsumption == 0) ? 0 : (totalArea3Kwh[0] / totalConsumption) * 100;
+
+                                    // Get the total cost from tvCostView
+                                    String totalCostText = tvCostView.getText().toString();
+                                    double totalCost = 0.0;
+                                    try {
+                                        // Extract numeric value from "₱ X.XX" format
+                                        String cleanCost = totalCostText.replace("₱", "").replace(",", "").trim();
+                                        totalCost = Double.parseDouble(cleanCost);
+                                    } catch (NumberFormatException e) {
+                                        Log.e("CostEstimation", "Error parsing total cost: " + totalCostText);
+                                    }
+
+                                    double totalCostArea1 = (percentageArea1 / 100.0) * totalCost;
+                                    double totalCostArea2 = (percentageArea2 / 100.0) * totalCost;
+                                    double totalCostArea3 = (percentageArea3 / 100.0) * totalCost;
 
                                     // ✅ Prepare Bar Entries (each cost as separate entry)
                                     ArrayList<BarEntry> entries = new ArrayList<>();
