@@ -67,6 +67,8 @@ public class CostEstimationActivity extends AppCompatActivity {
     
     // Store original rate before editing
     private String originalRate = "";
+    // Prevent duplicate async fetches from rendering duplicates
+    private boolean isFetchingPreviousRates = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -225,6 +227,8 @@ public class CostEstimationActivity extends AppCompatActivity {
                     costFilterRef.child("starting_date").setValue(date)
                             .addOnSuccessListener(aVoid -> {
                                 Toast.makeText(CostEstimationActivity.this, "Starting date saved", Toast.LENGTH_SHORT).show();
+                                // Auto-refresh
+                                method();
                             })
                             .addOnFailureListener(e -> {
                                 Toast.makeText(CostEstimationActivity.this, "Error: " + e.getMessage(), Toast.LENGTH_SHORT).show();
@@ -276,7 +280,11 @@ public class CostEstimationActivity extends AppCompatActivity {
                         etEndingDate.setText(newEnd);
                         DatabaseReference costFilterRef = db.child("cost_filter_date");
                         costFilterRef.child("ending_date").setValue(newEnd)
-                                .addOnSuccessListener(aVoid -> Toast.makeText(CostEstimationActivity.this, "Ending date set to 31-day window", Toast.LENGTH_SHORT).show())
+                                .addOnSuccessListener(aVoid -> {
+                                    Toast.makeText(CostEstimationActivity.this, "Ending date set to 31-day window", Toast.LENGTH_SHORT).show();
+                                    // Auto-refresh
+                                    method();
+                                })
                                 .addOnFailureListener(e -> Toast.makeText(CostEstimationActivity.this, "Error: " + e.getMessage(), Toast.LENGTH_SHORT).show());
                         return;
                     }
@@ -287,7 +295,11 @@ public class CostEstimationActivity extends AppCompatActivity {
                         etEndingDate.setText(newEnd);
                         DatabaseReference costFilterRef = db.child("cost_filter_date");
                         costFilterRef.child("ending_date").setValue(newEnd)
-                                .addOnSuccessListener(aVoid -> Toast.makeText(CostEstimationActivity.this, "Ending date adjusted to 31 days from the new starting date", Toast.LENGTH_SHORT).show())
+                                .addOnSuccessListener(aVoid -> {
+                                    Toast.makeText(CostEstimationActivity.this, "Ending date adjusted to 31 days from the new starting date", Toast.LENGTH_SHORT).show();
+                                    // Auto-refresh
+                                    method();
+                                })
                                 .addOnFailureListener(e -> Toast.makeText(CostEstimationActivity.this, "Error: " + e.getMessage(), Toast.LENGTH_SHORT).show());
                     }
                 }
@@ -333,6 +345,8 @@ public class CostEstimationActivity extends AppCompatActivity {
                     costFilterRef.child("ending_date").setValue(date)
                             .addOnSuccessListener(aVoid -> {
                                 Toast.makeText(CostEstimationActivity.this, "Ending date saved", Toast.LENGTH_SHORT).show();
+                                // Auto-refresh
+                                method();
                             })
                             .addOnFailureListener(e -> {
                                 Toast.makeText(CostEstimationActivity.this, "Error: " + e.getMessage(), Toast.LENGTH_SHORT).show();
@@ -825,50 +839,207 @@ public class CostEstimationActivity extends AppCompatActivity {
     }
     
     private void fetchPreviousRateInfo() {
-        DatabaseReference consumptionInfoRef = db.child("system_settings").child("consumption_info").child("rate_changes");
+        if (isFetchingPreviousRates) {
+            return;
+        }
+        isFetchingPreviousRates = true;
+        // Make sure container is reset immediately
+        previousNumbers.removeAllViews();
+        previousRatesContainer.setVisibility(View.GONE);
+        // First, get the current date filter to determine which rates to show
+        DatabaseReference costFilterDateRef = db.child("cost_filter_date");
         
-        consumptionInfoRef.orderByKey().addListenerForSingleValueEvent(new ValueEventListener() {
+        costFilterDateRef.addListenerForSingleValueEvent(new ValueEventListener() {
             @Override
-            public void onDataChange(DataSnapshot dataSnapshot) {
-                // Clear existing previous rate entries
-                previousNumbers.removeAllViews();
+            public void onDataChange(DataSnapshot filterSnapshot) {
+                String startingDateString = filterSnapshot.child("starting_date").getValue(String.class);
+                String endingDateString = filterSnapshot.child("ending_date").getValue(String.class);
                 
-                if (dataSnapshot.exists() && dataSnapshot.getChildrenCount() > 0) {
-                    // Show the container
-                    previousRatesContainer.setVisibility(View.VISIBLE);
-                    
-                    // Get all rate changes and display them in reverse order (most recent first)
-                    java.util.List<DataSnapshot> rateChanges = new java.util.ArrayList<>();
-                    for (DataSnapshot rateChangeSnapshot : dataSnapshot.getChildren()) {
-                        rateChanges.add(rateChangeSnapshot);
-                    }
-                    
-                    // Reverse the list to show most recent first
-                    java.util.Collections.reverse(rateChanges);
-                    
-                    // Display each rate change
-                    for (DataSnapshot rateChangeSnapshot : rateChanges) {
-                        Double previousRate = rateChangeSnapshot.child("previous_rate").getValue(Double.class);
-                        Double previousKwh = rateChangeSnapshot.child("previous_kwh").getValue(Double.class);
-                        String timestamp = rateChangeSnapshot.child("timestamp").getValue(String.class);
-                        String previousRatePeriodStart = rateChangeSnapshot.child("previous_rate_period_start").getValue(String.class);
-                        
-                        if (previousRate != null && previousKwh != null) {
-                            // Create a new row for this rate change
-                            LinearLayout rateRow = createRateHistoryRow(previousRate, previousKwh, previousRatePeriodStart, timestamp);
-                            previousNumbers.addView(rateRow);
-                        }
-                    }
-                } else {
-                    // No previous rate history, hide the container
+                if (startingDateString == null || endingDateString == null) {
                     previousRatesContainer.setVisibility(View.GONE);
+                    isFetchingPreviousRates = false;
+                    return;
+                }
+                
+                SimpleDateFormat dateFormatter = new SimpleDateFormat("yyyy-MM-dd", Locale.getDefault());
+                SimpleDateFormat timestampFormatter = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault());
+                
+                try {
+                    Date filterStartDate = dateFormatter.parse(startingDateString);
+                    Date filterEndDate = dateFormatter.parse(endingDateString);
+                    
+                    DatabaseReference consumptionInfoRef = db.child("system_settings").child("consumption_info").child("rate_changes");
+                    
+                    consumptionInfoRef.orderByKey().addListenerForSingleValueEvent(new ValueEventListener() {
+                        @Override
+                        public void onDataChange(DataSnapshot dataSnapshot) {
+                            // Clear existing previous rate entries
+                            previousNumbers.removeAllViews();
+                            
+                            if (dataSnapshot.exists() && dataSnapshot.getChildrenCount() > 0) {
+                                // Build contiguous rate periods from history (sorted ascending by timestamp)
+                                class RateChangeEntry {
+                                    double previousRate; double newRate; Date changeDate; String prevStartDateStr;
+                                }
+                                java.util.List<RateChangeEntry> entries = new java.util.ArrayList<>();
+                                for (DataSnapshot rc : dataSnapshot.getChildren()) {
+                                    try {
+                                        RateChangeEntry e = new RateChangeEntry();
+                                        Double pr = rc.child("previous_rate").getValue(Double.class);
+                                        Double nr = rc.child("new_rate").getValue(Double.class);
+                                        String ts = rc.child("timestamp").getValue(String.class);
+                                        String ps = rc.child("previous_rate_period_start").getValue(String.class);
+                                        if (pr == null || nr == null || ts == null) continue;
+                                        e.previousRate = pr;
+                                        e.newRate = nr;
+                                        e.changeDate = timestampFormatter.parse(ts); // moment the new rate started
+                                        e.prevStartDateStr = ps;
+                                        entries.add(e);
+                                    } catch (Exception ignore) { }
+                                }
+                                // sort ascending by changeDate
+                                java.util.Collections.sort(entries, (a,b) -> a.changeDate.compareTo(b.changeDate));
+
+                                // Build periods: a list of {rate, startDate, endDate}
+                                class RatePeriod { double rate; Date start; Date end; }
+                                java.util.List<RatePeriod> periods = new java.util.ArrayList<>();
+                                if (!entries.isEmpty()) {
+                                    // First period = previous rate before first change
+                                    RateChangeEntry first = entries.get(0);
+                                    Date firstStart;
+                                    try {
+                                        firstStart = first.prevStartDateStr != null ? dateFormatter.parse(first.prevStartDateStr) : first.changeDate;
+                                    } catch (ParseException e) { firstStart = first.changeDate; }
+                                    java.util.Calendar cal = java.util.Calendar.getInstance();
+                                    cal.setTime(first.changeDate);
+                                    cal.add(java.util.Calendar.DAY_OF_MONTH, -1);
+                                    Date firstEnd = cal.getTime();
+                                    RatePeriod p0 = new RatePeriod(); p0.rate = first.previousRate; p0.start = firstStart; p0.end = firstEnd; periods.add(p0);
+
+                                    // Middle periods = each entry's new_rate until next change-1 day
+                                    for (int i = 0; i < entries.size() - 1; i++) {
+                                        RateChangeEntry cur = entries.get(i);
+                                        RateChangeEntry next = entries.get(i+1);
+                                        Date start = null;
+                                        try {
+                                            start = dateFormatter.parse(dateFormatter.format(cur.changeDate));
+                                        } catch (ParseException e) {
+                                            throw new RuntimeException(e);
+                                        }
+                                        java.util.Calendar cal2 = java.util.Calendar.getInstance();
+                                        cal2.setTime(next.changeDate);
+                                        cal2.add(java.util.Calendar.DAY_OF_MONTH, -1);
+                                        Date end = cal2.getTime();
+                                        RatePeriod p = new RatePeriod(); p.rate = cur.newRate; p.start = start; p.end = end; periods.add(p);
+                                    }
+
+                                    // Last previous period = last entry's new_rate up to filterEnd (we consider it previous if it ends before today by next change; if still current, we still allow showing inside filter)
+                                    RateChangeEntry last = entries.get(entries.size()-1);
+                                    Date lastStart = null;
+                                    try {
+                                        lastStart = dateFormatter.parse(dateFormatter.format(last.changeDate));
+                                    } catch (ParseException e) {
+                                        throw new RuntimeException(e);
+                                    }
+                                    RatePeriod plast = new RatePeriod(); plast.rate = last.newRate; plast.start = lastStart; plast.end = filterEndDate; periods.add(plast);
+                                }
+
+                                boolean hasMatchingRates = false;
+                                java.util.Set<String> shownKeys = new java.util.HashSet<>();
+                                // Iterate from latest to oldest so newest appears on top
+                                for (int idx = periods.size() - 1; idx >= 0; idx--) {
+                                    RatePeriod rp = periods.get(idx);
+                                    if (rp.start == null || rp.end == null) continue;
+                                    // Intersect with filter [filterStartDate, filterEndDate]
+                                    Date start = rp.start.before(filterStartDate) ? filterStartDate : rp.start;
+                                    Date end = rp.end.after(filterEndDate) ? filterEndDate : rp.end;
+                                    if (end.before(start)) continue;
+                                    String key = String.format(java.util.Locale.getDefault(), "%s|%s|%.2f", dateFormatter.format(start), dateFormatter.format(end), rp.rate);
+                                    if (shownKeys.contains(key)) continue;
+                                    shownKeys.add(key);
+                                    calculateKwhForRatePeriodInRange(rp.rate, start, end, dateFormatter.format(start), dateFormatter.format(end));
+                                    hasMatchingRates = true;
+                                }
+                                
+                                if (hasMatchingRates) {
+                                    previousRatesContainer.setVisibility(View.VISIBLE);
+                                } else {
+                                    previousRatesContainer.setVisibility(View.GONE);
+                                }
+                                isFetchingPreviousRates = false;
+                            } else {
+                                // No previous rate history, hide the container
+                                previousRatesContainer.setVisibility(View.GONE);
+                                isFetchingPreviousRates = false;
+                            }
+                        }
+                        
+                        @Override
+                        public void onCancelled(DatabaseError databaseError) {
+                            // Hide previous rate display on error
+                            previousRatesContainer.setVisibility(View.GONE);
+                            isFetchingPreviousRates = false;
+                        }
+                    });
+                } catch (ParseException e) {
+                    Log.e("CostEstimation", "Error parsing filter dates: " + e.getMessage());
+                    previousRatesContainer.setVisibility(View.GONE);
+                    isFetchingPreviousRates = false;
                 }
             }
             
             @Override
             public void onCancelled(DatabaseError databaseError) {
-                // Hide previous rate display on error
+                // If we can't get the filter dates, hide the previous rates container
                 previousRatesContainer.setVisibility(View.GONE);
+                isFetchingPreviousRates = false;
+            }
+        });
+    }
+    
+    private void calculateKwhForRatePeriodInRange(double rate, Date overlapStart, Date overlapEnd, String ratePeriodStart, String timestamp) {
+        // Fetch hourly summaries to calculate kWh for the overlapping period only
+        DatabaseReference hourlySummariesRef = db.child("hourly_summaries");
+        SimpleDateFormat dateFormatter = new SimpleDateFormat("yyyy-MM-dd", Locale.getDefault());
+        SimpleDateFormat labelFormatter = new SimpleDateFormat("MMM dd", Locale.getDefault());
+        
+        hourlySummariesRef.orderByKey().addListenerForSingleValueEvent(new ValueEventListener() {
+            @Override
+            public void onDataChange(DataSnapshot dataSnapshot) {
+                double totalKwhForPeriod = 0.0;
+                
+                // Calculate kWh consumption only for the overlapping period
+                for (DataSnapshot dateSnapshot : dataSnapshot.getChildren()) {
+                    String dateKey = dateSnapshot.getKey();
+                    Date currentDate = null;
+                    try {
+                        currentDate = dateFormatter.parse(dateKey);
+                    } catch (ParseException e) {
+                        continue;
+                    }
+                    
+                    // Check if date is within the overlapping period (both inclusive, since end is already adjusted)
+                    if (currentDate != null && !currentDate.before(overlapStart) && !currentDate.after(overlapEnd)) {
+                        // Sum all hourly kWh for this date
+                        for (DataSnapshot hourSnapshot : dateSnapshot.getChildren()) {
+                            Double hourlyKwh = hourSnapshot.child("total_kwh").getValue(Double.class);
+                            if (hourlyKwh != null) {
+                                totalKwhForPeriod += hourlyKwh;
+                            }
+                        }
+                    }
+                }
+                
+                // Create and display the rate row with the calculated kWh for the overlapping period
+                String displayStart = labelFormatter.format(overlapStart);
+                String displayEnd = labelFormatter.format(overlapEnd);
+                LinearLayout rateRow = createRateHistoryRowWithDisplayPeriod(rate, totalKwhForPeriod, displayStart, displayEnd);
+                previousNumbers.addView(rateRow);
+            }
+            
+            @Override
+            public void onCancelled(DatabaseError databaseError) {
+                Log.e("CostEstimation", "Error fetching hourly data for rate period: " + databaseError.getMessage());
             }
         });
     }
@@ -933,6 +1104,47 @@ public class CostEstimationActivity extends AppCompatActivity {
         rateTextView.setGravity(android.view.Gravity.CENTER);
         rowLayout.addView(rateTextView);
         
+        return rowLayout;
+    }
+
+    // Overload used when we computed an adjusted overlap window already
+    private LinearLayout createRateHistoryRowWithDisplayPeriod(double rate, double kwh, String displayStart, String displayEnd) {
+        LinearLayout rowLayout = new LinearLayout(this);
+        rowLayout.setOrientation(LinearLayout.HORIZONTAL);
+        rowLayout.setLayoutParams(new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
+        rowLayout.setPadding(0, 4, 0, 4);
+        rowLayout.setWeightSum(6);
+
+        TextView kwhTextView = new TextView(this);
+        kwhTextView.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 2));
+        kwhTextView.setText(String.format("%.3f kwh", kwh));
+        kwhTextView.setTextSize(12);
+        kwhTextView.setTextColor(getResources().getColor(R.color.brown));
+        kwhTextView.setAlpha(0.7f);
+        kwhTextView.setGravity(android.view.Gravity.CENTER);
+        rowLayout.addView(kwhTextView);
+
+        TextView dotTextView = new TextView(this);
+        dotTextView.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        dotTextView.setText("•");
+        dotTextView.setTextSize(12);
+        dotTextView.setTextColor(getResources().getColor(R.color.brown));
+        dotTextView.setAlpha(0.7f);
+        dotTextView.setGravity(android.view.Gravity.CENTER);
+        rowLayout.addView(dotTextView);
+
+        TextView rateTextView = new TextView(this);
+        rateTextView.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 3));
+        String rateText = String.format("₱ %.2f / kWh (%s-%s)", rate, displayStart, displayEnd);
+        rateTextView.setText(rateText);
+        rateTextView.setTextSize(12);
+        rateTextView.setTextColor(getResources().getColor(R.color.brown));
+        rateTextView.setAlpha(0.7f);
+        rateTextView.setGravity(android.view.Gravity.CENTER);
+        rowLayout.addView(rateTextView);
+
         return rowLayout;
     }
     
@@ -1090,6 +1302,12 @@ public class CostEstimationActivity extends AppCompatActivity {
 
                     if (startingDate == null) return;
                     if (endingDate == null) endingDate = new Date();
+
+                    // Cap the averaging window to 'today' so we don't project using future days
+                    Date today = new Date();
+                    if (endingDate.after(today)) {
+                        endingDate = today;
+                    }
 
                     // Normalize both dates to midnight to avoid timezone/hour offsets
                     java.util.Calendar calStart = java.util.Calendar.getInstance();
@@ -1469,6 +1687,7 @@ public class CostEstimationActivity extends AppCompatActivity {
                                             0xFFFFD700      // gold (hex color)
                                     });
                                     dataSet.setValueTextSize(14f);
+                                    dataSet.setValueTextColor(getResources().getColor(R.color.brown));
 
                                     BarData barData = new BarData(dataSet);
                                     barData.setBarWidth(0.6f);
@@ -1476,6 +1695,8 @@ public class CostEstimationActivity extends AppCompatActivity {
                                     // ✅ Setup Horizontal Chart
                                     areaChart.setData(barData);
                                     areaChart.getDescription().setEnabled(false);
+                                    // Add extra right padding so value labels are fully visible
+                                    areaChart.setExtraOffsets(10f, 10f, 40f, 20f);
 
                                     // Y-axis = area names
                                     XAxis xAxis = areaChart.getXAxis();

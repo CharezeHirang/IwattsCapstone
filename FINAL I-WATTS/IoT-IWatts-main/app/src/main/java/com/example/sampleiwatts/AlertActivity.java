@@ -210,6 +210,17 @@ public class AlertActivity extends AppCompatActivity {
         thresholdRef.child("kwh_value").setValue(kwhText);
         thresholdRef.child("cost_value").setValue(costText);
         thresholdRef.child("time").setValue(timestamp);
+        // Reset server-side final-notified gate so new thresholds can trigger alerts
+        thresholdRef.child("final_notified").setValue(false);
+
+        // Reset local alert state so we can notify again for new thresholds
+        finalThresholdAlertSent = false;
+        reachedCostSent = false;
+        reachedKwhSent = false;
+        lastCostStepSent = -1;
+        lastKwhStepSent = -1;
+        lastNotifiedCost = -1.0;
+        lastNotifiedKwh = -1.0;
 
         DatabaseReference settingsRef = db.child("notification_settings");
         settingsRef.child("voltage_enabled").setValue(switchVoltage != null && switchVoltage.isChecked());
@@ -235,10 +246,11 @@ public class AlertActivity extends AppCompatActivity {
         // Send toggle alert for push notifications
         if (switchPush != null && switchPush.isChecked()) {
             notifyNow("Push Notifications", "You will see push notifications.");
-            startThresholdMonitoring();
         } else {
             notifyNow("Push Notifications", "You can directly see notifications in the app.");
         }
+        // Always start threshold monitoring for in-app notifications, regardless of push toggle
+        startThresholdMonitoring();
     }
 
     private boolean hasNotificationPermission() {
@@ -311,7 +323,7 @@ public class AlertActivity extends AppCompatActivity {
     }
 
     private void logAlertToDatabase(String title, String message) {
-        String type = inferAlertType(title);
+        String type = inferAlertType((title == null ? "" : title) + " " + (message == null ? "" : message));
         String timestamp = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(new Date());
         DatabaseReference alertsRef = db.child("alerts");
         Map<String, Object> data = new HashMap<>();
@@ -328,8 +340,8 @@ public class AlertActivity extends AppCompatActivity {
         String t = title == null ? "" : title.toLowerCase(Locale.getDefault());
         if (t.contains("voltage")) return "fluctuation";
         if (t.contains("system")) return "systemUpdates";
-        if (t.contains("kwh")) return "power";
-        if (t.contains("cost")) return "budget";
+        if (t.contains("kwh") || t.contains("energy")) return "power";
+        if (t.contains("cost") || t.contains("budget")) return "budget";
         return "general";
     }
 
@@ -436,22 +448,44 @@ public class AlertActivity extends AppCompatActivity {
                                 double kwhPercent = hasKwhLimit ? (totalKwh / kwhLimit) * 100.0 : 0.0;
                                 double costPercent = hasCostLimit ? (totalCost / costLimit) * 100.0 : 0.0;
 
-                                boolean kwhNear = hasKwhLimit && kwhPercent >= START_PERCENT && kwhPercent < 100.0;
-                                boolean costNear = hasCostLimit && costPercent >= START_PERCENT && costPercent < 100.0;
-                                boolean kwhReached = hasKwhLimit && kwhPercent >= 100.0;
-                                boolean costReached = hasCostLimit && costPercent >= 100.0;
-                                boolean kwhExceeded = hasKwhLimit && kwhPercent >= 103.0;
-                                boolean costExceeded = hasCostLimit && costPercent >= 103.0;
+                                final double EPS = 1e-4;             // percent tolerance
+                                final double MONEY_EPS = 0.01;        // ₱0.01 tolerance
+                                final double KWH_EPS = 0.001;         // 0.001 kWh tolerance
+
+                                boolean kwhNear = hasKwhLimit && kwhPercent >= START_PERCENT && kwhPercent < 100.0 - EPS;
+                                boolean costNear = hasCostLimit && costPercent >= START_PERCENT && costPercent < 100.0 - EPS;
+
+                                // Reached = at least the limit (with small absolute tolerance) but below 101%
+                                boolean kwhReached = hasKwhLimit && ((totalKwh + KWH_EPS >= (kwhLimit != null ? kwhLimit : 0.0)) || (kwhPercent >= 100.0 - EPS)) && (kwhPercent < 101.0 - EPS);
+                                boolean costReached = hasCostLimit && ((totalCost + MONEY_EPS >= (costLimit != null ? costLimit : 0.0)) || (costPercent >= 100.0 - EPS)) && (costPercent < 101.0 - EPS);
+
+                                // Exceeded = >= 101%
+                                boolean kwhExceeded = hasKwhLimit && kwhPercent >= 101.0 - EPS;
+                                boolean costExceeded = hasCostLimit && costPercent >= 101.0 - EPS;
 
                                 // Final one-time notification when exceeded
                                 if (!finalThresholdAlertSent && (kwhExceeded || costExceeded)) {
                                     finalThresholdAlertSent = true;
-                                    String finalMsg = String.format(Locale.getDefault(), "Exceeded: kWh %.3f / %.3f, Cost ₱%.2f / ₱%.2f",
-                                            totalKwh,
-                                            kwhLimit != null ? kwhLimit : 0.0,
-                                            totalCost,
-                                            costLimit != null ? costLimit : 0.0);
-                                    notifyNow("Threshold Exceeded", finalMsg);
+                                    String title;
+                                    if (costExceeded && !kwhExceeded)      title = "Budget Exceeded";
+                                    else if (!costExceeded && kwhExceeded) title = "Energy Limit Exceeded";
+                                    else                                   title = "Budget and Energy Exceeded";
+
+                                    StringBuilder finalMsg = new StringBuilder();
+                                    if (costExceeded && hasCostLimit) {
+                                        double over = Math.max(0.0, costPercent - 100.0);
+                                        finalMsg.append(String.format(Locale.getDefault(),
+                                                "You've gone over your budget by %.0f%%: ₱%.2f of ₱%.2f.",
+                                                over, totalCost, costLimit));
+                                    }
+                                    if (kwhExceeded && hasKwhLimit) {
+                                        if (finalMsg.length() > 0) finalMsg.append(" ");
+                                        double overK = Math.max(0.0, kwhPercent - 100.0);
+                                        finalMsg.append(String.format(Locale.getDefault(),
+                                                "You've exceeded your energy limit by %.0f%%: %.3f kWh of %.3f kWh.",
+                                                overK, totalKwh, kwhLimit));
+                                    }
+                                    notifyNow(title, finalMsg.toString());
                                     // persist so we don't re-notify if restarted
                                     db.child("threshold").child("final_notified").setValue(true);
                                     return; // stop further near alerts after final
@@ -459,16 +493,31 @@ public class AlertActivity extends AppCompatActivity {
 
                                 // One-time 100% reached alert (before 103%)
                                 if (!finalThresholdAlertSent && (kwhReached || costReached)) {
-                                    boolean send = false;
-                                    if (kwhReached && !reachedKwhSent) { reachedKwhSent = true; send = true; }
-                                    if (costReached && !reachedCostSent) { reachedCostSent = true; send = true; }
+                                    boolean send = (kwhReached || costReached); // always send when reached
                                     if (send) {
-                                        String reachedMsg = String.format(Locale.getDefault(), "Reached: kWh %.3f / %.3f, Cost ₱%.2f / ₱%.2f",
-                                                totalKwh,
-                                                hasKwhLimit ? kwhLimit : 0.0,
-                                                totalCost,
-                                                hasCostLimit ? costLimit : 0.0);
-                                        notifyNow("Threshold Reached", reachedMsg);
+                                        String title;
+                                        if (costReached && !kwhReached)      title = "Budget Reached (100%)";
+                                        else if (!costReached && kwhReached) title = "Energy Limit Reached (100%)";
+                                        else                                  title = "Budget and Energy Reached (100%)";
+
+                                        StringBuilder reachedMsg = new StringBuilder();
+                                        if (costReached && hasCostLimit) {
+                                            reachedMsg.append(String.format(Locale.getDefault(),
+                                                    "You've reached your budget: ₱%.2f of ₱%.2f (100%).",
+                                                    totalCost, costLimit));
+                                        }
+                                        if (kwhReached && hasKwhLimit) {
+                                            if (reachedMsg.length() > 0) reachedMsg.append(" ");
+                                            reachedMsg.append(String.format(Locale.getDefault(),
+                                                    "You've reached your energy limit: %.3f kWh of %.3f kWh (100%).",
+                                                    totalKwh, kwhLimit));
+                                        }
+                                        notifyNow(title, reachedMsg.toString());
+                                        // mark reached flags so Exceeded can still notify later
+                                        if (kwhReached) reachedKwhSent = true;
+                                        if (costReached) reachedCostSent = true;
+                                        android.util.Log.d("ThresholdCheck", "REACHED fired: cost%=" + costPercent + " kwh%=" + kwhPercent);
+                                        // do not mark final_notified here; allow exceeded to still trigger later
                                     }
                                 }
 
@@ -496,10 +545,24 @@ public class AlertActivity extends AppCompatActivity {
                                         lastCombinedAlertMs = now;
                                         lastNotifiedKwh = totalKwh;
                                         lastNotifiedCost = totalCost;
-                                        msg.append(String.format(Locale.getDefault(), "kWh %.3f / %.3f (%.0f%%)", totalKwh, hasKwhLimit ? kwhLimit : 0.0, kwhPercent));
-                                        msg.append(", ");
-                                        msg.append(String.format(Locale.getDefault(), "Cost ₱%.2f / ₱%.2f (%.0f%%)", totalCost, hasCostLimit ? costLimit : 0.0, costPercent));
-                                        notifyNow("Threshold Alert", msg.toString());
+
+                                        String title;
+                                        if (costNear && !kwhNear)       title = "Approaching Budget";
+                                        else if (!costNear && kwhNear)  title = "Approaching Energy Limit";
+                                        else                            title = "Approaching Limits";
+
+                                        if (costNear && hasCostLimit) {
+                                            msg.append(String.format(Locale.getDefault(),
+                                                    "You're at %.0f%% of your budget: ₱%.2f of ₱%.2f.",
+                                                    costPercent, totalCost, costLimit));
+                                        }
+                                        if (kwhNear && hasKwhLimit) {
+                                            if (msg.length() > 0) msg.append(" ");
+                                            msg.append(String.format(Locale.getDefault(),
+                                                    "You're at %.0f%% of your energy limit: %.3f kWh of %.3f kWh.",
+                                                    kwhPercent, totalKwh, kwhLimit));
+                                        }
+                                        notifyNow(title, msg.toString());
                                     }
                                 }
                             }
@@ -513,6 +576,11 @@ public class AlertActivity extends AppCompatActivity {
             @Override public void onCancelled(DatabaseError error) { }
         };
         thresholdRef.addValueEventListener(thresholdRefListener);
+        // Trigger an immediate check after (re)starting monitoring
+        db.child("threshold").addListenerForSingleValueEvent(new ValueEventListener() {
+            @Override public void onDataChange(DataSnapshot snapshot) { if (thresholdRefListener != null) thresholdRefListener.onDataChange(snapshot); }
+            @Override public void onCancelled(DatabaseError error) { }
+        });
     }
 
     private Double parseDouble(Object v) {

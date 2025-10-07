@@ -165,6 +165,27 @@ public class LoginActivity extends AppCompatActivity {
             return;
         }
 
+        // Show warning popup before proceeding with login
+        showDataWarningDialog(username, password);
+    }
+
+    private void showDataWarningDialog(final String username, final String password) {
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("Important Notice");
+        builder.setMessage("This app contains data and settings. Changing configurations or modifying data may cause different outcomes in your energy monitoring results. Please proceed with caution.");
+        builder.setPositiveButton("Continue", (dialog, which) -> {
+            // User confirmed, proceed with login
+            proceedWithLogin(username, password);
+        });
+        builder.setNegativeButton("Cancel", (dialog, which) -> {
+            // User cancelled, just dismiss the dialog
+            dialog.dismiss();
+        });
+        builder.setCancelable(true);
+        builder.show();
+    }
+
+    private void proceedWithLogin(String username, String password) {
         // Validate credentials (should match hardware AP credentials)
         if (username.equals(DEFAULT_USERNAME) && password.equals(DEFAULT_PASSWORD)) {
             // Save login state
