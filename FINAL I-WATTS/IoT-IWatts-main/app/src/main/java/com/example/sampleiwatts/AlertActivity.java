@@ -212,6 +212,7 @@ public class AlertActivity extends AppCompatActivity {
         thresholdRef.child("time").setValue(timestamp);
         // Reset server-side final-notified gate so new thresholds can trigger alerts
         thresholdRef.child("final_notified").setValue(false);
+        thresholdRef.child("reached_notified").setValue(false);
 
         // Reset local alert state so we can notify again for new thresholds
         finalThresholdAlertSent = false;
@@ -323,6 +324,7 @@ public class AlertActivity extends AppCompatActivity {
     }
 
     private void logAlertToDatabase(String title, String message) {
+        android.util.Log.d("AlertDatabase", "💾 Saving alert to database - Title: " + title);
         String type = inferAlertType((title == null ? "" : title) + " " + (message == null ? "" : message));
         String timestamp = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(new Date());
         DatabaseReference alertsRef = db.child("alerts");
@@ -333,7 +335,13 @@ public class AlertActivity extends AppCompatActivity {
         data.put("time", timestamp);
         data.put("read", false);
         data.put("delete", false);
-        alertsRef.push().setValue(data);
+        alertsRef.push().setValue(data, (error, ref) -> {
+            if (error != null) {
+                android.util.Log.e("AlertDatabase", "❌ Failed to save alert: " + error.getMessage());
+            } else {
+                android.util.Log.d("AlertDatabase", "✅ Alert saved successfully with key: " + ref.getKey());
+            }
+        });
     }
 
     private String inferAlertType(String title) {
@@ -346,6 +354,18 @@ public class AlertActivity extends AppCompatActivity {
     }
 
     private void startVoltageMonitoring() {
+        android.util.Log.d("VoltageMonitoring", "🔌 startVoltageMonitoring() called");
+        
+        // Load the last notified key from Firebase to prevent duplicate notifications after app restart
+        db.child("notification_settings").child("last_voltage_notified").addListenerForSingleValueEvent(new ValueEventListener() {
+            @Override
+            public void onDataChange(DataSnapshot snapshot) {
+                lastVoltageKeyNotified = snapshot.getValue(String.class);
+                android.util.Log.d("VoltageMonitoring", "Loaded last notified key: " + lastVoltageKeyNotified);
+            }
+            @Override public void onCancelled(DatabaseError error) { }
+        });
+        
         // Remove previous listener to avoid stacking
         DatabaseReference logsRef = db.child("logs");
         if (voltageListener != null) {
@@ -354,30 +374,72 @@ public class AlertActivity extends AppCompatActivity {
         voltageListener = new ValueEventListener() {
             @Override
             public void onDataChange(DataSnapshot snapshot) {
+                android.util.Log.d("VoltageMonitoring", "📥 Logs data received");
                 // Watch only the latest log to prevent bulk notifications
                 DataSnapshot latestDate = null;
                 for (DataSnapshot d : snapshot.getChildren()) latestDate = d; // last iterated = latest by key
-                if (latestDate == null) return;
+                if (latestDate == null) {
+                    android.util.Log.d("VoltageMonitoring", "❌ No dates found in logs");
+                    return;
+                }
+                android.util.Log.d("VoltageMonitoring", "Latest date: " + latestDate.getKey());
                 DataSnapshot latestEntry = null;
                 for (DataSnapshot e : latestDate.getChildren()) latestEntry = e;
-                if (latestEntry == null) return;
+                if (latestEntry == null) {
+                    android.util.Log.d("VoltageMonitoring", "❌ No entries found for latest date");
+                    return;
+                }
 
                 String key = latestEntry.getKey();
-                if (key != null && key.equals(lastVoltageKeyNotified)) return; // already notified for this entry
+                android.util.Log.d("VoltageMonitoring", "Latest entry key: " + key + " | Last notified: " + lastVoltageKeyNotified);
+                if (key != null && key.equals(lastVoltageKeyNotified)) {
+                    android.util.Log.d("VoltageMonitoring", "⏭️ Already notified for this entry, skipping");
+                    return; // already notified for this entry
+                }
 
                 int f1 = toInt(latestEntry.child("Fluct1").getValue());
                 int f2 = toInt(latestEntry.child("Fluct2").getValue());
                 int f3 = toInt(latestEntry.child("Fluct3").getValue());
+                android.util.Log.d("VoltageMonitoring", "Fluctuation values: F1=" + f1 + " F2=" + f2 + " F3=" + f3);
                 boolean a1 = (f1 == 1);
                 boolean a2 = (f2 == 1);
                 boolean a3 = (f3 == 1);
                 if (a1 || a2 || a3) {
+                    // Get date and time information
+                    String dateKey = latestDate.getKey();
+                    String timeKey = key;
+                    
+                    // Build the message with areas
                     StringBuilder msg = new StringBuilder("Voltage fluctuation detected in ");
                     if (a1) msg.append("Area 1 ");
                     if (a2) msg.append("Area 2 ");
                     if (a3) msg.append("Area 3 ");
+                    
+                    // Add date and time information
+                    if (dateKey != null && timeKey != null) {
+                        // Parse the ISO timestamp if available, or use date+time keys
+                        try {
+                            SimpleDateFormat inputFormat = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.getDefault());
+                            SimpleDateFormat outputFormat = new SimpleDateFormat("MMM dd, yyyy hh:mm:ss a", Locale.getDefault());
+                            Date timestamp = inputFormat.parse(timeKey);
+                            if (timestamp != null) {
+                                msg.append("at ").append(outputFormat.format(timestamp));
+                            } else {
+                                msg.append("on ").append(dateKey).append(" at ").append(timeKey);
+                            }
+                        } catch (Exception e) {
+                            // If parsing fails, just use the raw keys
+                            msg.append("on ").append(dateKey).append(" at ").append(timeKey);
+                        }
+                    }
+                    
                     lastVoltageKeyNotified = key;
+                    // Persist to Firebase to prevent duplicate notifications after app restart
+                    db.child("notification_settings").child("last_voltage_notified").setValue(key);
+                    android.util.Log.d("VoltageMonitoring", "⚡ VOLTAGE ALERT: " + msg.toString().trim());
                     notifyNow("Voltage Fluctuation", msg.toString().trim());
+                } else {
+                    android.util.Log.d("VoltageMonitoring", "✅ No fluctuations detected");
                 }
             }
             @Override public void onCancelled(DatabaseError error) { }
@@ -392,17 +454,28 @@ public class AlertActivity extends AppCompatActivity {
     }
 
     private void startThresholdMonitoring() {
+        android.util.Log.d("ThresholdMonitoring", "🚀 startThresholdMonitoring() called");
         // Listen to thresholds and date filter; compare sums within date range
         DatabaseReference thresholdRef = db.child("threshold");
         if (thresholdRefListener != null) thresholdRef.removeEventListener(thresholdRefListener);
         thresholdRefListener = new ValueEventListener() {
             @Override
             public void onDataChange(DataSnapshot tSnap) {
+                android.util.Log.d("ThresholdMonitoring", "📥 Threshold data changed - evaluating limits");
                 Double kwhLimit = parseDouble(tSnap.child("kwh_value").getValue());
                 Double costLimit = parseDouble(tSnap.child("cost_value").getValue());
+                android.util.Log.d("ThresholdMonitoring", "Limits: kwh=" + kwhLimit + " cost=" + costLimit);
                 Boolean finalNotified = (Boolean) tSnap.child("final_notified").getValue(Boolean.class);
                 finalThresholdAlertSent = finalNotified != null && finalNotified;
-                if (kwhLimit == null && costLimit == null) return;
+                Boolean reachedNotified = (Boolean) tSnap.child("reached_notified").getValue(Boolean.class);
+                reachedCostSent = reachedNotified != null && reachedNotified;
+                reachedKwhSent = reachedNotified != null && reachedNotified;
+                android.util.Log.d("ThresholdMonitoring", "Flags loaded: finalSent=" + finalThresholdAlertSent + " reachedSent=" + reachedCostSent);
+                if (kwhLimit == null && costLimit == null) {
+                    android.util.Log.d("ThresholdMonitoring", "❌ No limits set, skipping check");
+                    return;
+                }
+                android.util.Log.d("ThresholdMonitoring", "✅ Limits valid, fetching date range...");
 
                 // Fetch date range
                 DatabaseReference filterRef = db.child("cost_filter_date");
@@ -410,18 +483,25 @@ public class AlertActivity extends AppCompatActivity {
                 costFilterListener = new ValueEventListener() {
                     @Override
                     public void onDataChange(DataSnapshot filterSnap) {
+                        android.util.Log.d("ThresholdMonitoring", "📅 Date filter loaded");
                         Object sObj = filterSnap.child("starting_date").getValue();
                         Object eObj = filterSnap.child("ending_date").getValue();
                         String startStr = sObj == null ? null : sObj.toString();
                         String endStr = eObj == null ? null : eObj.toString();
+                        android.util.Log.d("ThresholdMonitoring", "Date range: " + startStr + " to " + endStr);
                         Date startDate = parseDateLenient(startStr);
                         Date endDate = parseDateLenient(endStr);
-                        if (startDate == null || endDate == null) return;
+                        if (startDate == null || endDate == null) {
+                            android.util.Log.e("ThresholdMonitoring", "❌ Invalid date range, aborting check");
+                            return;
+                        }
 
                         // Read a fresh snapshot once to avoid double-counting from stacked listeners
+                        android.util.Log.d("ThresholdMonitoring", "📊 Fetching hourly_summaries...");
                         db.child("hourly_summaries").addListenerForSingleValueEvent(new ValueEventListener() {
                             @Override
                             public void onDataChange(DataSnapshot dataSnapshot) {
+                                android.util.Log.d("ThresholdMonitoring", "✅ hourly_summaries loaded, calculating totals...");
                                 double totalKwh = 0.0;
                                 double totalCost = 0.0;
                                 for (DataSnapshot dateSnap : dataSnapshot.getChildren()) {
@@ -441,6 +521,7 @@ public class AlertActivity extends AppCompatActivity {
                                         " totalCost=" + String.format(java.util.Locale.getDefault(), "%.2f", totalCost) +
                                         " totalKwh=" + String.format(java.util.Locale.getDefault(), "%.3f", totalKwh) +
                                         " limits cost=" + costLimit + " kwh=" + kwhLimit);
+                                android.util.Log.d("ThresholdCheck", "reachedCostSent=" + reachedCostSent + " reachedKwhSent=" + reachedKwhSent + " finalSent=" + finalThresholdAlertSent);
 
                                 long now = System.currentTimeMillis();
                                 boolean hasKwhLimit = (kwhLimit != null && kwhLimit > 0);
@@ -462,6 +543,9 @@ public class AlertActivity extends AppCompatActivity {
                                 // Exceeded = >= 101%
                                 boolean kwhExceeded = hasKwhLimit && kwhPercent >= 101.0 - EPS;
                                 boolean costExceeded = hasCostLimit && costPercent >= 101.0 - EPS;
+
+                                android.util.Log.d("ThresholdCheck", "cost%=" + String.format("%.2f", costPercent) + " kwh%=" + String.format("%.2f", kwhPercent));
+                                android.util.Log.d("ThresholdCheck", "costReached=" + costReached + " kwhReached=" + kwhReached + " costExceeded=" + costExceeded + " kwhExceeded=" + kwhExceeded);
 
                                 // Final one-time notification when exceeded
                                 if (!finalThresholdAlertSent && (kwhExceeded || costExceeded)) {
@@ -491,32 +575,40 @@ public class AlertActivity extends AppCompatActivity {
                                     return; // stop further near alerts after final
                                 }
 
-                                // One-time 100% reached alert (before 103%)
-                                if (!finalThresholdAlertSent && (kwhReached || costReached)) {
-                                    boolean send = (kwhReached || costReached); // always send when reached
-                                    if (send) {
+                                // One-time 100% reached alert (before 101%)
+                                // Check independently: notify if cost reached OR kwh reached (and not already sent)
+                                if (!finalThresholdAlertSent) {
+                                    boolean shouldNotifyCost = costReached && !reachedCostSent;
+                                    boolean shouldNotifyKwh = kwhReached && !reachedKwhSent;
+                                    
+                                    if (shouldNotifyCost || shouldNotifyKwh) {
                                         String title;
-                                        if (costReached && !kwhReached)      title = "Budget Reached (100%)";
-                                        else if (!costReached && kwhReached) title = "Energy Limit Reached (100%)";
-                                        else                                  title = "Budget and Energy Reached (100%)";
+                                        if (shouldNotifyCost && !shouldNotifyKwh)      title = "Budget Reached (100%)";
+                                        else if (!shouldNotifyCost && shouldNotifyKwh) title = "Energy Limit Reached (100%)";
+                                        else                                            title = "Budget and Energy Reached (100%)";
 
                                         StringBuilder reachedMsg = new StringBuilder();
-                                        if (costReached && hasCostLimit) {
+                                        if (shouldNotifyCost && hasCostLimit) {
                                             reachedMsg.append(String.format(Locale.getDefault(),
-                                                    "You've reached your budget: ₱%.2f of ₱%.2f (100%).",
+                                                    "You've reached your budget: ₱%.2f of ₱%.2f (100%%).",
                                                     totalCost, costLimit));
                                         }
-                                        if (kwhReached && hasKwhLimit) {
+                                        if (shouldNotifyKwh && hasKwhLimit) {
                                             if (reachedMsg.length() > 0) reachedMsg.append(" ");
                                             reachedMsg.append(String.format(Locale.getDefault(),
-                                                    "You've reached your energy limit: %.3f kWh of %.3f kWh (100%).",
+                                                    "You've reached your energy limit: %.3f kWh of %.3f kWh (100%%).",
                                                     totalKwh, kwhLimit));
                                         }
+                                        android.util.Log.d("ThresholdCheck", "🔔 SENDING REACHED NOTIFICATION: " + title);
+                                        android.util.Log.d("ThresholdCheck", "Message: " + reachedMsg.toString());
                                         notifyNow(title, reachedMsg.toString());
+                                        android.util.Log.d("ThresholdCheck", "✅ notifyNow() called successfully");
                                         // mark reached flags so Exceeded can still notify later
-                                        if (kwhReached) reachedKwhSent = true;
-                                        if (costReached) reachedCostSent = true;
+                                        if (shouldNotifyKwh) reachedKwhSent = true;
+                                        if (shouldNotifyCost) reachedCostSent = true;
                                         android.util.Log.d("ThresholdCheck", "REACHED fired: cost%=" + costPercent + " kwh%=" + kwhPercent);
+                                        // persist reached notification to database
+                                        db.child("threshold").child("reached_notified").setValue(true);
                                         // do not mark final_notified here; allow exceeded to still trigger later
                                     }
                                 }
