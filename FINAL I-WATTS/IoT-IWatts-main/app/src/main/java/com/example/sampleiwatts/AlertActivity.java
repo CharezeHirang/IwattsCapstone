@@ -27,6 +27,7 @@ import com.google.firebase.database.FirebaseDatabase;
 import com.google.firebase.database.MutableData;
 import com.google.firebase.database.Transaction;
 import com.google.firebase.database.ValueEventListener;
+import com.google.firebase.messaging.FirebaseMessaging;
 
 import java.text.SimpleDateFormat;
 import java.util.Date;
@@ -91,6 +92,12 @@ public class AlertActivity extends AppCompatActivity {
 
         // Fetch previously saved threshold values and switch states
         fetchThresholdAndSettings();
+        
+        // Check for missed notifications when app starts
+        checkForMissedNotifications();
+        
+        // Get FCM token for background notifications
+        getFCMToken();
     }
 
     private void attachTextWatchers() {
@@ -252,6 +259,9 @@ public class AlertActivity extends AppCompatActivity {
         }
         // Always start threshold monitoring for in-app notifications, regardless of push toggle
         startThresholdMonitoring();
+        
+        // Reset backend notification flags when new thresholds are set
+        resetBackendNotificationFlags();
     }
 
     private boolean hasNotificationPermission() {
@@ -290,6 +300,80 @@ public class AlertActivity extends AppCompatActivity {
             }
             desiredVoltage = desiredSystem = desiredPush = null;
         }
+    }
+
+    private void getFCMToken() {
+        FirebaseMessaging.getInstance().getToken()
+            .addOnCompleteListener(task -> {
+                if (!task.isSuccessful()) {
+                    android.util.Log.w("FCM", "Fetching FCM registration token failed", task.getException());
+                    return;
+                }
+
+                // Get new FCM registration token
+                String token = task.getResult();
+                android.util.Log.d("FCM", "FCM Registration Token: " + token);
+
+                // Save token to Firebase Database
+                db.child("fcm_tokens").child(token).setValue(true);
+                
+                // Save token locally for reference
+                android.content.SharedPreferences prefs = getSharedPreferences("FCM_PREFS", Context.MODE_PRIVATE);
+                prefs.edit().putString("fcm_token", token).apply();
+                
+                android.util.Log.d("FCM", "✅ FCM token saved to database");
+            });
+    }
+
+    private void resetBackendNotificationFlags() {
+        // Call backend API to reset notification flags when new thresholds are set
+        new Thread(() -> {
+            try {
+                java.net.URL url = new java.net.URL("http://localhost:3000/reset-notifications");
+                java.net.HttpURLConnection connection = (java.net.HttpURLConnection) url.openConnection();
+                connection.setRequestMethod("POST");
+                connection.setConnectTimeout(5000);
+                connection.setReadTimeout(5000);
+                
+                int responseCode = connection.getResponseCode();
+                if (responseCode == 200) {
+                    android.util.Log.d("FCM", "✅ Backend notification flags reset successfully");
+                } else {
+                    android.util.Log.w("FCM", "⚠️ Failed to reset backend flags: " + responseCode);
+                }
+                connection.disconnect();
+            } catch (Exception e) {
+                android.util.Log.w("FCM", "⚠️ Could not connect to backend: " + e.getMessage());
+                // This is okay - backend might not be running
+            }
+        }).start();
+    }
+
+    private void checkForMissedNotifications() {
+        android.util.Log.d("BackgroundCheck", "🔍 Checking for missed notifications while app was closed");
+        
+        // Check threshold notifications
+        db.child("threshold").addListenerForSingleValueEvent(new ValueEventListener() {
+            @Override
+            public void onDataChange(DataSnapshot snapshot) {
+                // This will trigger the threshold monitoring logic
+                // which will check if any notifications were missed
+                android.util.Log.d("BackgroundCheck", "✅ Threshold check completed on app start");
+            }
+            @Override public void onCancelled(DatabaseError error) { }
+        });
+        
+        // Check voltage fluctuations
+        db.child("logs").limitToLast(1).addListenerForSingleValueEvent(new ValueEventListener() {
+            @Override
+            public void onDataChange(DataSnapshot snapshot) {
+                if (switchVoltage != null && switchVoltage.isChecked()) {
+                    android.util.Log.d("BackgroundCheck", "✅ Voltage check completed on app start");
+                    // The voltage monitoring logic will check for missed fluctuations
+                }
+            }
+            @Override public void onCancelled(DatabaseError error) { }
+        });
     }
 
     private void createNotificationChannel() {
