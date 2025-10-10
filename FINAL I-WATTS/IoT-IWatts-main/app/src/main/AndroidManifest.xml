@@ -9,9 +9,8 @@
     <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-    <uses-permission android:name="com.google.android.c2dm.permission.RECEIVE" />
-    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
 
     <application
         android:name=".IWattsApplication"
@@ -127,17 +126,22 @@
         <activity android:name=".LegalWebViewActivity"
             android:exported="false"
             android:parentActivityName=".LoginActivity" />
+            
+        <!-- Firebase Cloud Messaging Service -->
         <service
             android:name=".MyFirebaseMessagingService"
-            android:exported="true"
-            android:permission="com.google.android.c2dm.permission.SEND">
+            android:exported="false">
             <intent-filter>
                 <action android:name="com.google.firebase.MESSAGING_EVENT" />
             </intent-filter>
         </service>
-        <meta-data
-            android:name="com.google.firebase.messaging.default_notification_channel_id"
-            android:value="alerts_channel" />
+        
+        <!-- Background Notification Monitor Service -->
+        <service
+            android:name=".NotificationMonitorService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
     </application>
 
 </manifest>
