@@ -1485,97 +1485,144 @@ public class DashboardActivity extends AppCompatActivity {
                 String endingDateString = dataSnapshot.child("ending_date").getValue(String.class);
 
                 // Log the fetched data for debugging
-                Log.d("CostEstimation", "Starting Date: " + startingDateString);
-                Log.d("CostEstimation", "Ending Date: " + endingDateString);
+                Log.d("PeakWatts", "Starting Date: " + startingDateString);
+                Log.d("PeakWatts", "Ending Date: " + endingDateString);
 
-                SimpleDateFormat dateFormatter = new SimpleDateFormat("yyyy-MM-dd", Locale.getDefault());  // Adjust as per your Firebase format
+                SimpleDateFormat dateFormatter = new SimpleDateFormat("yyyy-MM-dd", Locale.getDefault());
                 try {
                     Date startingDate = dateFormatter.parse(startingDateString);
                     Date endingDate = dateFormatter.parse(endingDateString);
 
-                    Log.d("CostEstimation", "Parsed Starting Date: " + startingDate);
-                    Log.d("CostEstimation", "Parsed Ending Date: " + endingDate);
+                    Log.d("PeakWatts", "Parsed Starting Date: " + startingDate);
+                    Log.d("PeakWatts", "Parsed Ending Date: " + endingDate);
 
-                    // Now, fetch the daily summaries within the date range
-                    db.child("daily_summaries").orderByKey().addListenerForSingleValueEvent(new ValueEventListener() {
+                    // Fetch hourly summaries to calculate peak watts from actual data
+                    db.child("hourly_summaries").orderByKey().addListenerForSingleValueEvent(new ValueEventListener() {
                         @Override
                         public void onDataChange(DataSnapshot dataSnapshot) {
                             double highestPeakWatts = 0;
                             String peakDate = "";
-                            String peakTime = "";
+                            String peakHour = "";
 
-                            // Loop through the daily summaries to find the highest peak_watts
+                            // Loop through the hourly summaries to find the highest total_watts
                             for (DataSnapshot dateSnapshot : dataSnapshot.getChildren()) {
                                 String dateKey = dateSnapshot.getKey();
                                 Date currentDate = null;
                                 try {
                                     currentDate = dateFormatter.parse(dateKey);
                                 } catch (ParseException e) {
-                                    Log.e("CostEstimation", "Error parsing date: " + dateKey);
+                                    Log.e("PeakWatts", "Error parsing date: " + dateKey);
+                                    continue;
                                 }
 
-                                Log.d("CostEstimation", "Processing Date: " + dateKey);
-                                Log.d("CostEstimation", "Current Date: " + currentDate);
-
-                                // Check if the current date is within the range of starting and ending dates
+                                // Check if the current date is within the range
                                 if ((currentDate.equals(startingDate) || currentDate.after(startingDate)) &&
                                         (currentDate.equals(endingDate) || currentDate.before(endingDate))) {
 
-                                    // Get the peak_watts and peak_time for the current date
-                                    Double peakWatts = dateSnapshot.child("peak_watts").getValue(Double.class);
-                                    String peakTimeString = dateSnapshot.child("peak_time").getValue(String.class);
-
-                                    if (peakWatts != null && peakTimeString != null) {
-                                        Log.d("CostEstimation", "Peak Watts for " + dateKey + ": " + peakWatts + " at " + peakTimeString);
-
-                                        // Update the highest peak_watts if the current one is higher
-                                        if (peakWatts > highestPeakWatts) {
-                                            highestPeakWatts = peakWatts;
-                                            peakDate = dateKey;  // Store the date of the highest peak
-                                            peakTime = peakTimeString;  // Store the time of the highest peak
+                                    // Loop through hourly data to find peak
+                                    for (DataSnapshot hourSnapshot : dateSnapshot.getChildren()) {
+                                        String hourKey = hourSnapshot.getKey();
+                                        
+                                        // Try to get total_watts (or watts/power field)
+                                        Double watts = hourSnapshot.child("total_watts").getValue(Double.class);
+                                        if (watts == null) {
+                                            watts = hourSnapshot.child("watts").getValue(Double.class);
                                         }
-                                    } else {
-                                        Log.d("CostEstimation", "No peak watts or peak time for " + dateKey);
+                                        if (watts == null) {
+                                            watts = hourSnapshot.child("power").getValue(Double.class);
+                                        }
+                                        
+                                        // Calculate watts from kwh if watts not available
+                                        if (watts == null) {
+                                            Double kwh = hourSnapshot.child("total_kwh").getValue(Double.class);
+                                            if (kwh != null) {
+                                                watts = kwh * 1000; // Convert kWh to Wh (approximate)
+                                            }
+                                        }
+
+                                        if (watts != null && watts > highestPeakWatts) {
+                                            highestPeakWatts = watts;
+                                            peakDate = dateKey;
+                                            peakHour = hourKey;
+                                            Log.d("PeakWatts", "New peak found: " + watts + "W on " + dateKey + " at hour " + hourKey);
+                                        }
                                     }
                                 }
                             }
 
-                            // Format the peak time to display with AM/PM
-                            try {
-                                // Parse the peak time (assuming it is in 24-hour format "HH:mm:ss")
-                                SimpleDateFormat time24Format = new SimpleDateFormat("HH:mm:ss", Locale.getDefault());
-                                Date peakTimeDate = time24Format.parse(peakTime);
+                            // Check if we found any peak data
+                            if (highestPeakWatts > 0 && !peakHour.isEmpty() && !peakDate.isEmpty()) {
+                                try {
+                                    // Format the hour (assuming format like "14" for hour or "14:00:00")
+                                    String timeString = peakHour;
+                                    SimpleDateFormat time12Format;
+                                    
+                                    // Handle different hour formats
+                                    if (peakHour.contains(":")) {
+                                        // Format: "HH:mm:ss" or "HH:mm"
+                                        SimpleDateFormat time24Format = new SimpleDateFormat("HH:mm:ss", Locale.getDefault());
+                                        try {
+                                            Date peakTimeDate = time24Format.parse(peakHour);
+                                            time12Format = new SimpleDateFormat("hh:mm a", Locale.getDefault());
+                                            timeString = time12Format.format(peakTimeDate);
+                                        } catch (ParseException e) {
+                                            // Try HH:mm format
+                                            time24Format = new SimpleDateFormat("HH:mm", Locale.getDefault());
+                                            Date peakTimeDate = time24Format.parse(peakHour);
+                                            time12Format = new SimpleDateFormat("hh:mm a", Locale.getDefault());
+                                            timeString = time12Format.format(peakTimeDate);
+                                        }
+                                    } else {
+                                        // Format: just hour number like "14"
+                                        int hour = Integer.parseInt(peakHour);
+                                        String ampm = hour >= 12 ? "PM" : "AM";
+                                        int displayHour = hour % 12;
+                                        if (displayHour == 0) displayHour = 12;
+                                        timeString = String.format(Locale.getDefault(), "%d:00 %s", displayHour, ampm);
+                                    }
 
-                                // Convert to 12-hour format with AM/PM
-                                SimpleDateFormat time12Format = new SimpleDateFormat("hh:mm a", Locale.getDefault());
-                                String formattedPeakTime = time12Format.format(peakTimeDate);
+                                    // Display the highest peak watts value
+                                    String formattedPeakWatts = String.format("%.0f", highestPeakWatts);
+                                    Log.d("PeakWatts", "Highest Peak: " + formattedPeakWatts + "W on " + peakDate + " at " + timeString);
 
-                                // Display the highest peak_watts value along with the date and time
-                                String formattedPeakWatts = String.format("%.0f", highestPeakWatts);
-                                Log.d("PeakWatts", "Highest Peak Watts: " + formattedPeakWatts + " on " + peakDate + " at " + formattedPeakTime);
-
-                                // Update UI with peak watt value in tvPeakValue and formatted time in tvPeakTime
-                                tvPeakValue.setText(formattedPeakWatts + " W ");
-                                tvPeakTime.setText(peakDate + " " + formattedPeakTime);  // Display formatted time (AM/PM) in tvPeakTime
-                            } catch (ParseException e) {
-                                Log.e("CostEstimation", "Error parsing or formatting peak time: " + e.getMessage());
+                                    // Update UI
+                                    tvPeakValue.setText(formattedPeakWatts + " W");
+                                    tvPeakTime.setText(peakDate + " " + timeString);
+                                    
+                                } catch (Exception e) {
+                                    Log.e("PeakWatts", "Error formatting peak time: " + e.getMessage());
+                                    String formattedPeakWatts = String.format("%.0f", highestPeakWatts);
+                                    tvPeakValue.setText(formattedPeakWatts + " W");
+                                    tvPeakTime.setText(peakDate);
+                                }
+                            } else {
+                                // No peak data found in the date range
+                                Log.d("PeakWatts", "No peak data found in the selected date range");
+                                tvPeakValue.setText("---");
+                                tvPeakTime.setText("No data");
                             }
                         }
 
                         @Override
                         public void onCancelled(DatabaseError databaseError) {
-                            Log.e("FirebaseError", "Error fetching daily summaries: " + databaseError.getMessage());
+                            Log.e("FirebaseError", "Error fetching hourly summaries: " + databaseError.getMessage());
+                            tvPeakValue.setText("---");
+                            tvPeakTime.setText("Error");
                         }
                     });
                 } catch (ParseException e) {
                     e.printStackTrace();
-                    Log.e("CostEstimation", "Error parsing dates: " + e.getMessage());
+                    Log.e("PeakWatts", "Error parsing dates: " + e.getMessage());
+                    tvPeakValue.setText("---");
+                    tvPeakTime.setText("Error");
                 }
             }
 
             @Override
             public void onCancelled(DatabaseError databaseError) {
                 Log.e("FirebaseError", "Error fetching cost filter data: " + databaseError.getMessage());
+                tvPeakValue.setText("---");
+                tvPeakTime.setText("Error");
             }
         });
     }
@@ -1627,6 +1674,11 @@ public class DashboardActivity extends AppCompatActivity {
                             if (pctChange > 0) {
                                 tvTrendIcon.setImageResource(R.drawable.ic_up);
                                 percentageChangeContainer.setBackgroundResource(R.drawable.bg_percentage);
+                                
+                                // Send alert if consumption increased by 100% or more
+                                if (pctChange >= 100.0) {
+                                    sendConsumptionAlert(pctChange, todaySoFar, finalYesterdayTotal);
+                                }
                             } else {
                                 tvTrendIcon.setImageResource(R.drawable.ic_down);
                                 percentageChangeContainer.setBackgroundResource(R.drawable.bg_percentage_change);
@@ -1642,6 +1694,32 @@ public class DashboardActivity extends AppCompatActivity {
             @Override public void onCancelled(DatabaseError error) { }
         });
     }
+    
+    private void sendConsumptionAlert(double percentageChange, double todayConsumption, double yesterdayConsumption) {
+        DatabaseReference alertsRef = db.child("alerts");
+        
+        String title = "High Consumption Alert";
+        String message = String.format(Locale.getDefault(), 
+            "Your today's consumption (%.2f kWh) is %.1f%% higher than yesterday (%.2f kWh). Please monitor your energy usage.",
+            todayConsumption, percentageChange, yesterdayConsumption);
+        
+        java.util.Map<String, Object> alertData = new java.util.HashMap<>();
+        alertData.put("type", "consumption");
+        alertData.put("title", title);
+        alertData.put("message", message);
+        alertData.put("time", new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(new Date()));
+        alertData.put("read", false);
+        alertData.put("delete", false);
+        
+        alertsRef.push().setValue(alertData)
+            .addOnSuccessListener(aVoid -> {
+                Log.d(TAG, "✅ Consumption alert saved to database");
+            })
+            .addOnFailureListener(e -> {
+                Log.e(TAG, "❌ Failed to save consumption alert: " + e.getMessage());
+            });
+    }
+    
     private void fetchArea1() {
         DatabaseReference costFilterDateRef = db.child("cost_filter_date");
 
