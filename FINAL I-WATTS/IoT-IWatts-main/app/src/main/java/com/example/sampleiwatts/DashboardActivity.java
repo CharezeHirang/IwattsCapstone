@@ -92,7 +92,7 @@ public class DashboardActivity extends AppCompatActivity {
     private boolean isArea1Editable = false;
     private boolean isArea2Editable = false;
     private boolean isArea3Editable = false;
-    
+
     // Store original names before editing
     private String originalArea1Name = "";
     private String originalArea2Name = "";
@@ -103,78 +103,78 @@ public class DashboardActivity extends AppCompatActivity {
         if (areaName == null || areaName.trim().isEmpty()) {
             return "🏠"; // Default house icon
         }
-        
+
         String name = areaName.toLowerCase().trim();
-        
+
         // Living room variations
         if (name.contains("living") || name.contains("lounge") || name.contains("family")) {
             return "🛋️";
         }
-        
+
         // Dining area variations
         if (name.contains("dining") || name.contains("eat")) {
             return "🍴";
         }
-        
+
         // Kitchen variations
         if (name.contains("kitchen") || name.contains("cook")) {
             return "🍳";
         }
-        
+
         // Bedroom variations
         if (name.contains("bedroom") || name.contains("bed") || name.contains("sleep")) {
             return "🛏️";
         }
-        
+
         // Bathroom variations
-        if (name.contains("bathroom") || name.contains("toilet") || name.contains("comfort") || 
-            name.contains("cr") || name.contains("restroom") || name.contains("wash")) {
+        if (name.contains("bathroom") || name.contains("toilet") || name.contains("comfort") ||
+                name.contains("cr") || name.contains("restroom") || name.contains("wash")) {
             return "🚿";
         }
-        
+
         // Hallway/Corridor variations
-        if (name.contains("hallway") || name.contains("corridor") || name.contains("hall") || 
-            name.contains("passage") || name.contains("walkway")) {
+        if (name.contains("hallway") || name.contains("corridor") || name.contains("hall") ||
+                name.contains("passage") || name.contains("walkway")) {
             return "🏠";
         }
-        
+
         // Study/Office variations
-        if (name.contains("study") || name.contains("office") || name.contains("work") || 
-            name.contains("desk") || name.contains("library")) {
+        if (name.contains("study") || name.contains("office") || name.contains("work") ||
+                name.contains("desk") || name.contains("library")) {
             return "📚";
         }
-        
+
         // Garage variations
         if (name.contains("garage") || name.contains("carport") || name.contains("parking")) {
             return "🚗";
         }
-        
+
         // Garden/Yard variations
-        if (name.contains("garden") || name.contains("yard") || name.contains("outdoor") || 
-            name.contains("backyard") || name.contains("front yard")) {
+        if (name.contains("garden") || name.contains("yard") || name.contains("outdoor") ||
+                name.contains("backyard") || name.contains("front yard")) {
             return "🌿";
         }
-        
+
         // Laundry area variations
         if (name.contains("laundry") || name.contains("wash") || name.contains("drying")) {
             return "🧺";
         }
-        
+
         // Balcony/Terrace variations
         if (name.contains("balcony") || name.contains("terrace") || name.contains("patio")) {
             return "\uD83C\uDFE1";
         }
-        
+
         // Porch/Entrance variations
-        if (name.contains("porch") || name.contains("entrance") || name.contains("entrance") || 
-            name.contains("foyer") || name.contains("lobby")) {
+        if (name.contains("porch") || name.contains("entrance") || name.contains("entrance") ||
+                name.contains("foyer") || name.contains("lobby")) {
             return "🏠";
         }
-        
+
         // Default fallback
         return "🏠";
     }
-    
+
     private NavigationDrawerHelper drawerHelper;
 
     protected void onCreate(Bundle savedInstanceState) {
@@ -198,7 +198,7 @@ public class DashboardActivity extends AppCompatActivity {
         // Setup navigation drawer
         drawerHelper = new NavigationDrawerHelper(this);
         drawerHelper.setupNavigationDrawer();
-        
+
         // Handle intent extras for navigation tracking
         Intent intent = getIntent();
         if (intent.getBooleanExtra("from_drawer", false)) {
@@ -479,7 +479,7 @@ public class DashboardActivity extends AppCompatActivity {
             imm.hideSoftInputFromWindow(view.getWindowToken(), 0);
         }
     }
-    
+
     // Alternative method to hide keyboard from current focus
     private void hideKeyboardFromCurrentFocus() {
         View currentFocus = getCurrentFocus();
@@ -490,7 +490,7 @@ public class DashboardActivity extends AppCompatActivity {
             }
         }
     }
-    
+
     // Force hide keyboard using activity context
     private void forceHideKeyboard() {
         InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
@@ -559,10 +559,10 @@ public class DashboardActivity extends AppCompatActivity {
                             // Format the total cost
                             String formattedCost = String.format("%.2f", cumulativeCost);
                             tvTotalCost.setText("₱ " + formattedCost);
-                            
+
                             // Update data fetch timestamp for connection status
                             lastDataUpdateAtMs = System.currentTimeMillis();
-                            
+
                             // Immediately update connection status to Connected
                             updateActivationText(true);
                         }
@@ -924,10 +924,10 @@ public class DashboardActivity extends AppCompatActivity {
 
                             String totalKwhText = formattedKwh +" kwh";
                             tvTotalConsumption.setText(totalKwhText);
-                            
+
                             // Update data fetch timestamp for connection status
                             lastDataUpdateAtMs = System.currentTimeMillis();
-                            
+
                             // Immediately update connection status to Connected
                             updateActivationText(true);
 
@@ -957,7 +957,7 @@ public class DashboardActivity extends AppCompatActivity {
             return;
         }
         area1Name = capitalizeAreaName(area1Name);
-        
+
         // Show confirmation dialog
         showAreaNameChangeConfirmation("Area 1", area1Name, 1);
     }
@@ -971,7 +971,7 @@ public class DashboardActivity extends AppCompatActivity {
     // Helper method to update area icon based on area number and name
     private void updateAreaIcon(int areaNumber, String areaName) {
         String icon = getIconForAreaName(areaName);
-        
+
         switch (areaNumber) {
             case 1:
                 if (area1_icon != null) {
@@ -995,7 +995,7 @@ public class DashboardActivity extends AppCompatActivity {
     private void updateAreaDetailsHeader(int areaNumber, String areaName) {
         String icon = getIconForAreaName(areaName);
         String headerText = icon + " " + areaName + " Details";
-        
+
         switch (areaNumber) {
             case 1:
                 if (area1_details != null) {
@@ -1026,7 +1026,7 @@ public class DashboardActivity extends AppCompatActivity {
                         int drawableWidth = drawableEnd.getIntrinsicWidth();
                         int editTextWidth = editText.getWidth();
                         int drawableX = editTextWidth - editText.getPaddingRight() - drawableWidth;
-                        
+
                         if (event.getX() >= drawableX) {
                             // Edit icon was clicked
                             enableEditing(editText, areaNumber);
@@ -1057,17 +1057,17 @@ public class DashboardActivity extends AppCompatActivity {
                 isArea3Editable = true;
                 break;
         }
-        
+
         editText.setFocusable(true);
         editText.setFocusableInTouchMode(true);
         editText.setClickable(true);
         editText.setCursorVisible(true);
         editText.requestFocus();
-        
+
         // Add OnEditorActionListener to handle Enter key
         editText.setOnEditorActionListener((v, actionId, event) -> {
-            if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_DONE || 
-                (event != null && event.getKeyCode() == android.view.KeyEvent.KEYCODE_ENTER)) {
+            if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_DONE ||
+                    (event != null && event.getKeyCode() == android.view.KeyEvent.KEYCODE_ENTER)) {
                 // Save the changes
                 switch (areaNumber) {
                     case 1:
@@ -1094,7 +1094,7 @@ public class DashboardActivity extends AppCompatActivity {
         editText.setCursorVisible(false);
         editText.clearFocus();
         editText.setOnEditorActionListener(null);
-        
+
         // Clear the appropriate editable flag
         switch (areaNumber) {
             case 1:
@@ -1116,7 +1116,7 @@ public class DashboardActivity extends AppCompatActivity {
             return;
         }
         area2Name = capitalizeAreaName(area2Name);
-        
+
         // Show confirmation dialog
         showAreaNameChangeConfirmation("Area 2", area2Name, 2);
     }
@@ -1127,7 +1127,7 @@ public class DashboardActivity extends AppCompatActivity {
             return;
         }
         area3Name = capitalizeAreaName(area3Name);
-        
+
         // Show confirmation dialog
         showAreaNameChangeConfirmation("Area 3", area3Name, 3);
     }
@@ -1136,11 +1136,11 @@ public class DashboardActivity extends AppCompatActivity {
     private void showAreaNameChangeConfirmation(String areaLabel, String newName, int areaNumber) {
         // Capitalize the name for display
         String capitalizedName = capitalizeAreaName(newName);
-        
+
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
         builder.setTitle("Confirm Area Name Change")
                 .setMessage("Are you sure you want to change " + areaLabel + " name to \"" + capitalizedName + "\"?\n\n" +
-                           "This action will update the database and may affect data tracking.")
+                        "This action will update the database and may affect data tracking.")
                 .setPositiveButton("Yes, Update", (dialog, which) -> {
                     // User confirmed, proceed with database update
                     updateAreaNameInDatabase(newName, areaNumber);
@@ -1160,29 +1160,29 @@ public class DashboardActivity extends AppCompatActivity {
         // Capitalize the area name properly
         newName = capitalizeAreaName(newName);
         DatabaseReference systemSettingsRef = db.child("system_settings");
-        
+
         // Create timestamp
         String timestamp = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault())
                 .format(new java.util.Date());
-        
+
         // Get the original name (before editing started) to store in history
         String originalName = getOriginalAreaName(areaNumber);
-        
+
         // Get the appropriate field names
         String fieldName = "area" + areaNumber + "_name";
         String historyFieldName = "area" + areaNumber + "_history";
-        
+
         // Update the current area name
         systemSettingsRef.child(fieldName).setValue(newName);
-        
+
         // Create history entry under the "name" child
         DatabaseReference nameRef = systemSettingsRef.child("name");
         DatabaseReference historyRef = nameRef.child(historyFieldName);
-        
+
         // Create a new history entry with timestamp
         String historyKey = timestamp.replace(" ", "_").replace(":", "-"); // Make it a valid Firebase key
         DatabaseReference newHistoryEntry = historyRef.child(historyKey);
-        
+
         // Store both the name and timestamp in the history
         newHistoryEntry.child("name").setValue(newName);
         newHistoryEntry.child("timestamp").setValue(timestamp);
@@ -1195,17 +1195,17 @@ public class DashboardActivity extends AppCompatActivity {
                         editText.setText(finalNewName);
                         editText.clearFocus();
                     }
-                    
-                    Toast.makeText(DashboardActivity.this, 
+
+                    Toast.makeText(DashboardActivity.this,
                             "Area " + areaNumber + " name updated successfully!", Toast.LENGTH_SHORT).show();
-                    
+
                     // Make field non-editable again after successful update
                     disableEditingForArea(areaNumber);
                 })
                 .addOnFailureListener(e -> {
-                    Toast.makeText(DashboardActivity.this, 
+                    Toast.makeText(DashboardActivity.this,
                             "Error updating Area " + areaNumber + " name", Toast.LENGTH_SHORT).show();
-                    
+
                     // Make field non-editable again even on failure
                     disableEditingForArea(areaNumber);
                 });
@@ -1251,16 +1251,16 @@ public class DashboardActivity extends AppCompatActivity {
         if (name == null || name.trim().isEmpty()) {
             return name;
         }
-        
+
         String trimmed = name.trim();
         String[] words = trimmed.split("\\s+");
         StringBuilder result = new StringBuilder();
-        
+
         for (int i = 0; i < words.length; i++) {
             if (i > 0) {
                 result.append(" ");
             }
-            
+
             String word = words[i];
             if (word.length() > 0) {
                 result.append(Character.toUpperCase(word.charAt(0)));
@@ -1269,7 +1269,7 @@ public class DashboardActivity extends AppCompatActivity {
                 }
             }
         }
-        
+
         return result.toString();
     }
 
@@ -1617,7 +1617,7 @@ public class DashboardActivity extends AppCompatActivity {
                         String sign = pctChange > 0 ? "+" : "";
                         String pctText = String.format(Locale.getDefault(), "%s%.1f%%", sign, pctChange);
                         tvPercentageChange.setText(pctText);
-                        
+
                         if (pctChange == 0.0) {
                             // Hide trend icon when percentage change is exactly 0.0
                             tvTrendIcon.setVisibility(View.GONE);
@@ -1631,9 +1631,9 @@ public class DashboardActivity extends AppCompatActivity {
                                 tvTrendIcon.setImageResource(R.drawable.ic_down);
                                 percentageChangeContainer.setBackgroundResource(R.drawable.bg_percentage_change);
                             }
-    }
+                        }
 
-}
+                    }
 
                     @Override public void onCancelled(DatabaseError error) { }
                 });
