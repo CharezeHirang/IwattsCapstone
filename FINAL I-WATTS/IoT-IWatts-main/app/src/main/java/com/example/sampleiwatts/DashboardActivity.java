@@ -75,6 +75,11 @@ public class DashboardActivity extends AppCompatActivity {
     private static final long TIMEOUT_MS = 20000;
     private final long logsStaleAfterMs = 20_000L; // 2 minutes with no updates => inactive
     private final android.os.Handler activationHandler = new android.os.Handler(android.os.Looper.getMainLooper());
+    
+    // Track consumption alert thresholds to prevent spam
+    private boolean consumptionAlert100Sent = false;
+    private boolean consumptionAlert150Sent = false;
+    private boolean consumptionAlert200Sent = false;
     private final Runnable activationChecker = new Runnable() {
         @Override public void run() {
             long now = System.currentTimeMillis();
@@ -1634,6 +1639,9 @@ public class DashboardActivity extends AppCompatActivity {
         final String todayKey = ymd.format(cal.getTime());
         cal.add(Calendar.DAY_OF_YEAR, -1);
         final String yesterdayKey = ymd.format(cal.getTime());
+        
+        // Reset consumption alert flags daily (when new day starts)
+        resetConsumptionAlertFlags();
 
         // Step 1: read yesterday total_kwh from daily_summaries
         db.child("daily_summaries").child(yesterdayKey).addListenerForSingleValueEvent(new ValueEventListener() {
@@ -1675,9 +1683,19 @@ public class DashboardActivity extends AppCompatActivity {
                                 tvTrendIcon.setImageResource(R.drawable.ic_up);
                                 percentageChangeContainer.setBackgroundResource(R.drawable.bg_percentage);
                                 
-                                // Send alert if consumption increased by 100% or more
-                                if (pctChange >= 100.0) {
+                                // Send consumption alerts at specific intervals: 100%, 150%, 200%
+                                if (pctChange >= 100.0 && !consumptionAlert100Sent) {
                                     sendConsumptionAlert(pctChange, todaySoFar, finalYesterdayTotal);
+                                    consumptionAlert100Sent = true;
+                                    Log.d(TAG, "✅ Consumption alert sent at 100% threshold");
+                                } else if (pctChange >= 150.0 && !consumptionAlert150Sent) {
+                                    sendConsumptionAlert(pctChange, todaySoFar, finalYesterdayTotal);
+                                    consumptionAlert150Sent = true;
+                                    Log.d(TAG, "✅ Consumption alert sent at 150% threshold");
+                                } else if (pctChange >= 200.0 && !consumptionAlert200Sent) {
+                                    sendConsumptionAlert(pctChange, todaySoFar, finalYesterdayTotal);
+                                    consumptionAlert200Sent = true;
+                                    Log.d(TAG, "✅ Consumption alert sent at 200% threshold");
                                 }
                             } else {
                                 tvTrendIcon.setImageResource(R.drawable.ic_down);
@@ -1695,10 +1713,28 @@ public class DashboardActivity extends AppCompatActivity {
         });
     }
     
+    private void resetConsumptionAlertFlags() {
+        // Reset flags at the start of each day
+        consumptionAlert100Sent = false;
+        consumptionAlert150Sent = false;
+        consumptionAlert200Sent = false;
+        Log.d(TAG, "🔄 Consumption alert flags reset for new day");
+    }
+    
     private void sendConsumptionAlert(double percentageChange, double todayConsumption, double yesterdayConsumption) {
         DatabaseReference alertsRef = db.child("alerts");
         
-        String title = "High Consumption Alert";
+        // Determine which threshold was reached
+        String thresholdText = "";
+        if (percentageChange >= 200.0) {
+            thresholdText = " (200%+ threshold reached)";
+        } else if (percentageChange >= 150.0) {
+            thresholdText = " (150%+ threshold reached)";
+        } else if (percentageChange >= 100.0) {
+            thresholdText = " (100%+ threshold reached)";
+        }
+        
+        String title = "High Consumption Alert" + thresholdText;
         String message = String.format(Locale.getDefault(), 
             "Your today's consumption (%.2f kWh) is %.1f%% higher than yesterday (%.2f kWh). Please monitor your energy usage.",
             todayConsumption, percentageChange, yesterdayConsumption);
