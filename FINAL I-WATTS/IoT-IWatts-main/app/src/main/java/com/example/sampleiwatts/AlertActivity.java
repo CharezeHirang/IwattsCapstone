@@ -240,7 +240,8 @@ public class AlertActivity extends AppCompatActivity {
         // Send toggle alerts for voltage and system updates
         if (switchVoltage != null && switchVoltage.isChecked()) {
             notifyNow("Voltage Fluctuation", "You will receive voltage fluctuation messages.");
-            //startVoltageMonitoring();
+            // When voltage switch is turned ON, reset the baseline to NOW to prevent old alerts
+            resetVoltageBaseline();
         } else {
             notifyNow("Voltage Fluctuation", "You won't receive voltage fluctuation messages.");
         }
@@ -255,8 +256,8 @@ public class AlertActivity extends AppCompatActivity {
         boolean pushEnabled = switchPush != null && switchPush.isChecked();
         db.child("notification_settings").child("push_enabled").setValue(pushEnabled);
         
-        // Always start background monitoring service for continuous threshold checking
-        // The service will always run to detect changes automatically
+        // Always start background monitoring service for continuous threshold and voltage checking
+        // The service will always run to detect changes automatically in the background
         startBackgroundMonitoringService();
         
         // Send notification about Push switch state
@@ -265,9 +266,6 @@ public class AlertActivity extends AppCompatActivity {
         } else {
             notifyNow("Push Notifications", "In-app monitoring enabled. You will receive notifications while the app is running.");
         }
-        
-        // Always start threshold monitoring for in-app notifications, regardless of push toggle
-        //startThresholdMonitoring();
         
         // Reset backend notification flags when new thresholds are set
         resetBackendNotificationFlags();
@@ -600,12 +598,14 @@ public class AlertActivity extends AppCompatActivity {
     }
 
     private void notifyNow(String title, String message) {
-        // Always send to database
+        // ALWAYS save to database - notifications are always stored regardless of switches
         logAlertToDatabase(title, message);
+        android.util.Log.d("AlertActivity", "✅ Notification saved to database: " + title);
         
-        // Send push notification if enabled and permission granted
+        // Only send push notification if Push switch is ON and permission is granted
         boolean canPush = (switchPush != null && switchPush.isChecked()) && hasNotificationPermission();
         if (canPush) {
+            android.util.Log.d("AlertActivity", "📲 Push enabled - sending push notification");
             NotificationManager manager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
             if (manager != null) {
                 NotificationCompat.Builder builder = new NotificationCompat.Builder(this, CHANNEL_ID)
@@ -616,7 +616,10 @@ public class AlertActivity extends AppCompatActivity {
                         .setAutoCancel(true);
                 int id = (int) System.currentTimeMillis();
                 manager.notify(id, builder.build());
+                android.util.Log.d("AlertActivity", "✅ Push notification sent");
             }
+        } else {
+            android.util.Log.d("AlertActivity", "🔕 Push disabled - notification saved to database only (will show in Notification Activity)");
         }
     }
 
@@ -650,57 +653,148 @@ public class AlertActivity extends AppCompatActivity {
         return "general";
     }
 
-    private void startVoltageMonitoring() {
-        android.util.Log.d("VoltageMonitoring", "🔌 startVoltageMonitoring() called");
+    private void resetVoltageBaseline() {
+        android.util.Log.d("VoltageMonitoring", "🔄 Resetting voltage baseline to NOW");
         
-        // Load the last notified key from Firebase to prevent duplicate notifications after app restart
-        db.child("notification_settings").child("last_voltage_notified").addListenerForSingleValueEvent(new ValueEventListener() {
+        // Get the current latest entry and set it as the baseline
+        DatabaseReference logsRef = db.child("logs");
+        logsRef.limitToLast(1).addListenerForSingleValueEvent(new ValueEventListener() {
             @Override
             public void onDataChange(DataSnapshot snapshot) {
-                lastVoltageKeyNotified = snapshot.getValue(String.class);
-                android.util.Log.d("VoltageMonitoring", "Loaded last notified key: " + lastVoltageKeyNotified);
+                // Find the absolute latest entry
+                DataSnapshot latestDate = null;
+                for (DataSnapshot d : snapshot.getChildren()) latestDate = d;
+                
+                if (latestDate != null) {
+                    DataSnapshot latestEntry = null;
+                    for (DataSnapshot e : latestDate.getChildren()) latestEntry = e;
+                    
+                    if (latestEntry != null) {
+                        String currentLatestKey = latestEntry.getKey();
+                        
+                        // FORCE set to current latest (ignore any saved value)
+                        lastVoltageKeyNotified = currentLatestKey;
+                        db.child("notification_settings").child("last_voltage_notified").setValue(currentLatestKey);
+                        android.util.Log.d("VoltageMonitoring", "✅ Voltage baseline RESET to current: " + currentLatestKey);
+                        android.util.Log.d("VoltageMonitoring", "⏰ Only fluctuations AFTER this moment will trigger alerts");
+                    }
+                }
             }
-            @Override public void onCancelled(DatabaseError error) { }
+            @Override public void onCancelled(DatabaseError error) {
+                android.util.Log.e("VoltageMonitoring", "❌ Error resetting baseline: " + error.getMessage());
+            }
         });
+    }
+    
+    private void startVoltageMonitoring() {
+        android.util.Log.d("VoltageMonitoring", "🔌 startVoltageMonitoring() called");
         
         // Remove previous listener to avoid stacking
         DatabaseReference logsRef = db.child("logs");
         if (voltageListener != null) {
             logsRef.removeEventListener(voltageListener);
+            android.util.Log.d("VoltageMonitoring", "Removed previous listener");
         }
+        
+        // First, initialize the last notified key to the current latest entry to prevent old notifications
+        logsRef.limitToLast(1).addListenerForSingleValueEvent(new ValueEventListener() {
+            @Override
+            public void onDataChange(DataSnapshot snapshot) {
+                // Find the absolute latest entry
+                DataSnapshot latestDate = null;
+                for (DataSnapshot d : snapshot.getChildren()) latestDate = d;
+                
+                if (latestDate != null) {
+                    DataSnapshot latestEntry = null;
+                    for (DataSnapshot e : latestDate.getChildren()) latestEntry = e;
+                    
+                    if (latestEntry != null) {
+                        String currentLatestKey = latestEntry.getKey();
+                        
+                        // Load the saved last notified key
+                        db.child("notification_settings").child("last_voltage_notified").addListenerForSingleValueEvent(new ValueEventListener() {
+                            @Override
+                            public void onDataChange(DataSnapshot savedSnapshot) {
+                                String savedKey = savedSnapshot.getValue(String.class);
+                                
+                                // If no saved key exists, initialize it to current latest to prevent spam
+                                if (savedKey == null || savedKey.isEmpty()) {
+                                    lastVoltageKeyNotified = currentLatestKey;
+                                    db.child("notification_settings").child("last_voltage_notified").setValue(currentLatestKey);
+                                    android.util.Log.d("VoltageMonitoring", "Initialized last notified key to current: " + currentLatestKey);
+                                } else {
+                                    lastVoltageKeyNotified = savedKey;
+                                    android.util.Log.d("VoltageMonitoring", "Loaded saved last notified key: " + savedKey);
+                                }
+                                
+                                // Now set up the ongoing listener for FUTURE changes only
+                                setupVoltageListener();
+                            }
+                            @Override public void onCancelled(DatabaseError error) { 
+                                setupVoltageListener(); // Set up listener anyway
+                            }
+                        });
+                    } else {
+                        setupVoltageListener();
+                    }
+                } else {
+                    setupVoltageListener();
+                }
+            }
+            @Override public void onCancelled(DatabaseError error) { 
+                setupVoltageListener(); // Set up listener anyway
+            }
+        });
+    }
+    
+    private void setupVoltageListener() {
+        android.util.Log.d("VoltageMonitoring", "Setting up voltage listener with last key: " + lastVoltageKeyNotified);
+        
+        DatabaseReference logsRef = db.child("logs");
         voltageListener = new ValueEventListener() {
             @Override
             public void onDataChange(DataSnapshot snapshot) {
-                android.util.Log.d("VoltageMonitoring", "📥 Logs data received");
                 // Watch only the latest log to prevent bulk notifications
                 DataSnapshot latestDate = null;
-                for (DataSnapshot d : snapshot.getChildren()) latestDate = d; // last iterated = latest by key
+                for (DataSnapshot d : snapshot.getChildren()) latestDate = d;
+                
                 if (latestDate == null) {
-                    android.util.Log.d("VoltageMonitoring", "❌ No dates found in logs");
                     return;
                 }
-                android.util.Log.d("VoltageMonitoring", "Latest date: " + latestDate.getKey());
+                
                 DataSnapshot latestEntry = null;
                 for (DataSnapshot e : latestDate.getChildren()) latestEntry = e;
+                
                 if (latestEntry == null) {
-                    android.util.Log.d("VoltageMonitoring", "❌ No entries found for latest date");
                     return;
                 }
 
                 String key = latestEntry.getKey();
-                android.util.Log.d("VoltageMonitoring", "Latest entry key: " + key + " | Last notified: " + lastVoltageKeyNotified);
+                
+                // CRITICAL: Skip if this is the same key or older than what we've already processed
                 if (key != null && key.equals(lastVoltageKeyNotified)) {
-                    android.util.Log.d("VoltageMonitoring", "⏭️ Already notified for this entry, skipping");
-                    return; // already notified for this entry
+                    return; // Already processed this entry
+                }
+                
+                // Additional check: if we have a lastVoltageKeyNotified, ensure new key is actually newer
+                if (lastVoltageKeyNotified != null && key != null && key.compareTo(lastVoltageKeyNotified) <= 0) {
+                    android.util.Log.d("VoltageMonitoring", "Skipping older/same entry: " + key);
+                    return;
                 }
 
                 int f1 = toInt(latestEntry.child("Fluct1").getValue());
                 int f2 = toInt(latestEntry.child("Fluct2").getValue());
                 int f3 = toInt(latestEntry.child("Fluct3").getValue());
-                android.util.Log.d("VoltageMonitoring", "Fluctuation values: F1=" + f1 + " F2=" + f2 + " F3=" + f3);
+                
                 boolean a1 = (f1 == 1);
                 boolean a2 = (f2 == 1);
                 boolean a3 = (f3 == 1);
+                
+                // Update lastVoltageKeyNotified immediately to prevent duplicate processing
+                String previousKey = lastVoltageKeyNotified;
+                lastVoltageKeyNotified = key;
+                db.child("notification_settings").child("last_voltage_notified").setValue(key);
+                
                 if (a1 || a2 || a3) {
                     // Get date and time information
                     String dateKey = latestDate.getKey();
@@ -714,7 +808,6 @@ public class AlertActivity extends AppCompatActivity {
                     
                     // Add date and time information
                     if (dateKey != null && timeKey != null) {
-                        // Parse the ISO timestamp if available, or use date+time keys
                         try {
                             SimpleDateFormat inputFormat = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.getDefault());
                             SimpleDateFormat outputFormat = new SimpleDateFormat("MMM dd, yyyy hh:mm:ss a", Locale.getDefault());
@@ -725,23 +818,20 @@ public class AlertActivity extends AppCompatActivity {
                                 msg.append("on ").append(dateKey).append(" at ").append(timeKey);
                             }
                         } catch (Exception e) {
-                            // If parsing fails, just use the raw keys
                             msg.append("on ").append(dateKey).append(" at ").append(timeKey);
                         }
                     }
                     
-                    lastVoltageKeyNotified = key;
-                    // Persist to Firebase to prevent duplicate notifications after app restart
-                    db.child("notification_settings").child("last_voltage_notified").setValue(key);
-                    android.util.Log.d("VoltageMonitoring", "⚡ VOLTAGE ALERT: " + msg.toString().trim());
+                    android.util.Log.d("VoltageMonitoring", "⚡ NEW VOLTAGE ALERT: " + msg.toString().trim() + " (previous: " + previousKey + ", current: " + key + ")");
                     notifyNow("Voltage Fluctuation", msg.toString().trim());
                 } else {
-                    android.util.Log.d("VoltageMonitoring", "✅ No fluctuations detected");
+                    android.util.Log.d("VoltageMonitoring", "Updated last key to " + key + " (no fluctuation)");
                 }
             }
             @Override public void onCancelled(DatabaseError error) { }
         };
         logsRef.addValueEventListener(voltageListener);
+        android.util.Log.d("VoltageMonitoring", "✅ Listener attached");
     }
 
     private int toInt(Object v) {

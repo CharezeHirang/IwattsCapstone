@@ -49,6 +49,11 @@ public class NotificationMonitorService extends Service {
     private boolean reachedCostSent = false;
     private boolean reachedKwhSent = false;
     
+    // Switch states loaded from Firebase
+    private boolean voltageEnabled = false;
+    private boolean systemUpdatesEnabled = false;
+    private boolean pushEnabled = false;
+    
     private static final double EPS = 0.01;
     private static final double MONEY_EPS = 0.01;
     private static final double KWH_EPS = 0.001;
@@ -69,6 +74,9 @@ public class NotificationMonitorService extends Service {
         
         // Load last notified voltage key
         loadLastVoltageKey();
+        
+        // Load notification switch states from Firebase
+        loadNotificationSettings();
     }
 
     @Override
@@ -165,6 +173,30 @@ public class NotificationMonitorService extends Service {
                 }
                 @Override
                 public void onCancelled(DatabaseError error) {}
+            });
+    }
+    
+    private void loadNotificationSettings() {
+        Log.d(TAG, "📥 Loading notification settings from Firebase");
+        db.child("notification_settings").addValueEventListener(new ValueEventListener() {
+            @Override
+            public void onDataChange(DataSnapshot snapshot) {
+                Boolean voltage = snapshot.child("voltage_enabled").getValue(Boolean.class);
+                Boolean system = snapshot.child("system_updates_enabled").getValue(Boolean.class);
+                Boolean push = snapshot.child("push_enabled").getValue(Boolean.class);
+                
+                voltageEnabled = voltage != null && voltage;
+                systemUpdatesEnabled = system != null && system;
+                pushEnabled = push != null && push;
+                
+                Log.d(TAG, "✅ Settings loaded - Voltage: " + voltageEnabled + 
+                          ", System: " + systemUpdatesEnabled + 
+                          ", Push: " + pushEnabled);
+            }
+            @Override
+            public void onCancelled(DatabaseError error) {
+                Log.e(TAG, "❌ Error loading settings: " + error.getMessage());
+            }
             });
     }
 
@@ -445,30 +477,124 @@ public class NotificationMonitorService extends Service {
     }
 
     private void startVoltageMonitoring() {
-        Log.d(TAG, "🚀 Starting voltage monitoring");
+        Log.d(TAG, "🚀 Starting voltage monitoring - checking initialization");
+        
+        // Wait a moment to ensure lastVoltageKeyNotified is loaded from onCreate
+        new android.os.Handler().postDelayed(() -> {
+            DatabaseReference logsRef = db.child("logs");
+            
+            // Get the absolute latest entry first
+            logsRef.limitToLast(1).addListenerForSingleValueEvent(new ValueEventListener() {
+                @Override
+                public void onDataChange(DataSnapshot snapshot) {
+                    // Find the absolute latest entry
+                    DataSnapshot latestDate = null;
+                    for (DataSnapshot d : snapshot.getChildren()) latestDate = d;
+                    
+                    String currentLatestKey = null;
+                    if (latestDate != null) {
+                        DataSnapshot latestEntry = null;
+                        for (DataSnapshot e : latestDate.getChildren()) latestEntry = e;
+                        
+                        if (latestEntry != null) {
+                            currentLatestKey = latestEntry.getKey();
+                        }
+                    }
+                    
+                    // If no lastVoltageKeyNotified is set, initialize to current latest
+                    if (lastVoltageKeyNotified == null || lastVoltageKeyNotified.isEmpty()) {
+                        lastVoltageKeyNotified = currentLatestKey;
+                        if (lastVoltageKeyNotified != null) {
+                            db.child("notification_settings").child("last_voltage_notified").setValue(lastVoltageKeyNotified);
+                            Log.d(TAG, "⚡ Initialized last voltage key to CURRENT latest: " + lastVoltageKeyNotified);
+                        }
+                    } else {
+                        Log.d(TAG, "⚡ Using existing last voltage key: " + lastVoltageKeyNotified);
+                    }
+                    
+                    // Now set up the ongoing listener for FUTURE changes only
+                    setupServiceVoltageListener();
+                }
+                @Override
+                public void onCancelled(DatabaseError error) {
+                    Log.e(TAG, "❌ Error getting latest log: " + error.getMessage());
+                    setupServiceVoltageListener(); // Set up listener anyway
+                }
+            });
+        }, 500); // Small delay to ensure lastVoltageKeyNotified from onCreate is loaded
+    }
+    
+    private void setupServiceVoltageListener() {
+        Log.d(TAG, "Setting up service voltage listener with last key: " + lastVoltageKeyNotified);
+        
+        // CRITICAL: If no last key is set, don't set up listener yet (safety check)
+        if (lastVoltageKeyNotified == null) {
+            Log.e(TAG, "⚠️ Cannot setup voltage listener - lastVoltageKeyNotified is null!");
+            return;
+        }
         
         voltageListener = db.child("logs").addValueEventListener(new ValueEventListener() {
             @Override
             public void onDataChange(DataSnapshot snapshot) {
-                for (DataSnapshot dateSnapshot : snapshot.getChildren()) {
-                    String dateKey = dateSnapshot.getKey();
-                    for (DataSnapshot entrySnapshot : dateSnapshot.getChildren()) {
-                        String timeKey = entrySnapshot.getKey();
-                        String key = dateKey + "_" + timeKey;
-                        
-                        if (lastVoltageKeyNotified != null && key.equals(lastVoltageKeyNotified)) {
-                            continue;
-                        }
-                        
-                        Integer f1 = entrySnapshot.child("Fluct1").getValue(Integer.class);
-                        Integer f2 = entrySnapshot.child("Fluct2").getValue(Integer.class);
-                        Integer f3 = entrySnapshot.child("Fluct3").getValue(Integer.class);
+                // Watch only the latest log to prevent bulk notifications
+                DataSnapshot latestDate = null;
+                for (DataSnapshot d : snapshot.getChildren()) latestDate = d;
+                
+                if (latestDate == null) {
+                    Log.d(TAG, "⚠️ No latest date in logs");
+                    return;
+                }
+                
+                DataSnapshot latestEntry = null;
+                for (DataSnapshot e : latestDate.getChildren()) latestEntry = e;
+                
+                if (latestEntry == null) {
+                    Log.d(TAG, "⚠️ No latest entry in date");
+                    return;
+                }
+
+                String key = latestEntry.getKey();
+                
+                // CRITICAL: Skip if this is the same key or older than what we've already processed
+                if (key == null) {
+                    Log.d(TAG, "⚠️ Latest entry has null key");
+                    return;
+                }
+                
+                if (key.equals(lastVoltageKeyNotified)) {
+                    Log.d(TAG, "⏭️ Same voltage key, skipping: " + key);
+                    return; // Already processed this entry
+                }
+                
+                // Additional check: ensure new key is actually newer
+                if (lastVoltageKeyNotified != null && key.compareTo(lastVoltageKeyNotified) <= 0) {
+                    Log.d(TAG, "⏭️ Skipping older/same voltage entry: " + key + " (last: " + lastVoltageKeyNotified + ")");
+                    return;
+                }
+
+                Integer f1 = latestEntry.child("Fluct1").getValue(Integer.class);
+                Integer f2 = latestEntry.child("Fluct2").getValue(Integer.class);
+                Integer f3 = latestEntry.child("Fluct3").getValue(Integer.class);
                         
                         boolean a1 = (f1 != null && f1 == 1);
                         boolean a2 = (f2 != null && f2 == 1);
                         boolean a3 = (f3 != null && f3 == 1);
+                
+                // Update lastVoltageKeyNotified immediately to prevent duplicate processing
+                String previousKey = lastVoltageKeyNotified;
+                lastVoltageKeyNotified = key;
+                db.child("notification_settings").child("last_voltage_notified").setValue(key);
                         
                         if (a1 || a2 || a3) {
+                    // Only send notification if voltage monitoring is enabled
+                    if (!voltageEnabled) {
+                        Log.d(TAG, "⏭️ Voltage fluctuation detected but voltage switch is OFF - skipping notification");
+                        return;
+                    }
+                    
+                    String dateKey = latestDate.getKey();
+                    String timeKey = key;
+                    
                             StringBuilder msg = new StringBuilder("Voltage fluctuation detected in ");
                             if (a1) msg.append("Area 1 ");
                             if (a2) msg.append("Area 2 ");
@@ -489,26 +615,29 @@ public class NotificationMonitorService extends Service {
                                 }
                             }
                             
-                            lastVoltageKeyNotified = key;
-                            db.child("notification_settings").child("last_voltage_notified").setValue(key);
-                            
+                    Log.d(TAG, "⚡ NEW VOLTAGE ALERT: " + msg.toString().trim() + " (previous: " + previousKey + ", current: " + key + ")");
                             sendNotification("Voltage Fluctuation", msg.toString());
-                        }
-                    }
+                } else {
+                    Log.d(TAG, "Updated last voltage key to " + key + " (no fluctuation)");
                 }
             }
             @Override
-            public void onCancelled(DatabaseError error) {}
+            public void onCancelled(DatabaseError error) {
+                Log.e(TAG, "❌ Error in voltage monitoring: " + error.getMessage());
+            }
         });
     }
 
     private void sendNotification(String title, String message) {
         Log.d(TAG, "🔔 Sending notification: " + title);
         
-        // Save to database
+        // ALWAYS save to database - notifications are always stored regardless of switches
         saveAlertToDatabase(title, message);
+        Log.d(TAG, "✅ Notification saved to database");
         
-        // Show notification
+        // Only send push notification if pushEnabled switch is ON
+        if (pushEnabled) {
+            Log.d(TAG, "📲 Push enabled - sending push notification");
         Intent intent = new Intent(this, NotificationActivity.class);
         intent.putExtra("alert_title", title);
         intent.putExtra("alert_message", message);
@@ -529,6 +658,10 @@ public class NotificationMonitorService extends Service {
         NotificationManager manager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
         if (manager != null) {
             manager.notify((int) System.currentTimeMillis(), builder.build());
+                Log.d(TAG, "✅ Push notification sent");
+            }
+        } else {
+            Log.d(TAG, "🔕 Push disabled - notification saved to database only (will show in Notification Activity)");
         }
     }
 
@@ -720,14 +853,33 @@ public class NotificationMonitorService extends Service {
 
     private void saveAlertToDatabase(String title, String message) {
         DatabaseReference alertsRef = db.child("alerts");
+        
+        // Determine alert type based on title
+        String type = "general";
+        String titleLower = title.toLowerCase();
+        if (titleLower.contains("voltage")) {
+            type = "fluctuation";
+        } else if (titleLower.contains("budget") || titleLower.contains("cost")) {
+            type = "budget";
+        } else if (titleLower.contains("energy") || titleLower.contains("kwh") || titleLower.contains("power")) {
+            type = "power";
+        } else if (titleLower.contains("system")) {
+            type = "systemUpdates";
+        }
+        
         Map<String, Object> data = new HashMap<>();
-        data.put("type", "threshold");
+        data.put("type", type);
         data.put("title", title);
         data.put("message", message);
         data.put("time", new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(new Date()));
         data.put("read", false);
         data.put("delete", false);
-        alertsRef.push().setValue(data);
+        
+        alertsRef.push().setValue(data, (error, ref) -> {
+            if (error != null) {
+                Log.e(TAG, "❌ Failed to save alert to database: " + error.getMessage());
+            } 
+        });
     }
 
     @Override
