@@ -6,16 +6,28 @@ import com.google.firebase.database.*;
 import java.text.SimpleDateFormat;
 import java.util.*;
 
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import android.os.Handler;
+import android.os.Looper;
+
+
+
 public class RealTimeDataProcessor {
     private static final String TAG = "RealTimeDataProcessor";
 
     // Philippine timezone
     private static final TimeZone PHILIPPINE_TIMEZONE = TimeZone.getTimeZone("Asia/Manila");
 
+    private final ExecutorService executor = Executors.newSingleThreadExecutor();
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
+
     private DatabaseReference databaseRef;
+    private boolean hasTriedFallback = false;
     private SimpleDateFormat dateFormat;
     private SimpleDateFormat timeFormat;
     private SimpleDateFormat dateTimeFormat;
+    private boolean isLoading = false;
 
     public RealTimeDataProcessor() {
         this.databaseRef = FirebaseDatabase.getInstance().getReference();
@@ -47,6 +59,7 @@ public class RealTimeDataProcessor {
         public double totalConsumption;
         public double totalCost;
         public double peakWatts;
+
         public String peakTime;
         public int batteryPercent;
         public boolean isCharging;
@@ -134,17 +147,15 @@ public class RealTimeDataProcessor {
                     @Override
                     public void onCurrentHourProcessed(CurrentHourData currentHourData) {
                         try {
-                            RealTimeData realTimeData = buildCompleteRealTimeData(hourlySnapshot, currentHourData, electricityRate, date);
+                            RealTimeData realTimeData = buildCompleteRealTimeData(
+                                    hourlySnapshot, currentHourData, electricityRate, date
+                            );
 
-                            // Add status message if using fallback data
                             if (currentHourData.isFallbackData && !currentHourData.fallbackMessage.isEmpty()) {
                                 Log.i(TAG, "Real-time data note: " + currentHourData.fallbackMessage);
-                                // You can show this message to the user if needed
-                                // realTimeData.statusMessage = currentHourData.fallbackMessage;
                             }
 
-                            // Calculate real peaks from log data (async)
-                            calculateRealAreaPeaksFromLogData(realTimeData, date, voltageReference, callback);
+                            calculateRealAreaPeaksFromSnapshot(hourlySnapshot, realTimeData, date, callback);
                         } catch (Exception e) {
                             Log.e(TAG, "Error building real-time data: " + e.getMessage(), e);
                             callback.onError("Failed to process real-time data");
@@ -162,7 +173,16 @@ public class RealTimeDataProcessor {
                             public void onCurrentHourProcessed(CurrentHourData emptyData) {
                                 try {
                                     RealTimeData realTimeData = buildCompleteRealTimeData(hourlySnapshot, emptyData, electricityRate, date);
-                                    calculateRealAreaPeaksFromLogData(realTimeData, date, voltageReference, callback);
+                                    calculateRealAreaPeaksFromLogData(realTimeData, date, voltageReference, new DataProcessingCallback() {
+                                        @Override
+                                        public void onDataProcessed(RealTimeData dataWithPeaks) {
+                                            // 🔹 Only now pass to UI once peaks are ready
+                                            callback.onDataProcessed(dataWithPeaks);
+                                        }
+
+                                        @Override public void onError(String error) { callback.onError(error); }
+                                        @Override public void onSettingsLoaded(double rate, double voltage) { }
+                                    });
                                 } catch (Exception e) {
                                     Log.e(TAG, "Error building real-time data with empty current hour: " + e.getMessage(), e);
                                     callback.onError("Failed to process real-time data");
@@ -209,17 +229,24 @@ public class RealTimeDataProcessor {
                         if (snapshot.exists()) {
                             // Current hour has data, process it
                             try {
-                                CurrentHourData currentHourData = processCurrentHourLogs(snapshot, currentHourStr, voltageReference);
-                                callback.onCurrentHourProcessed(currentHourData);
+                                executor.execute(() -> {
+                                    CurrentHourData currentHourData = processCurrentHourLogs(snapshot, currentHourStr, voltageReference);
+                                    mainHandler.post(() -> callback.onCurrentHourProcessed(currentHourData));
+                                });
                             } catch (Exception e) {
                                 Log.e(TAG, "Error processing current hour logs: " + e.getMessage(), e);
                                 // Fallback to previous hour
                                 tryPreviousHourAsFallback(logsRef, date, currentHour, voltageReference, callback);
                             }
                         } else {
-                            Log.d(TAG, "No current hour log data found, trying fallback to previous hour");
-                            // No current hour data, try previous hour as fallback
-                            tryPreviousHourAsFallback(logsRef, date, currentHour, voltageReference, callback);
+                            if (!hasTriedFallback) {
+                                hasTriedFallback = true;
+                                Log.d(TAG, "No current hour log data found, trying fallback to previous hour");
+                                tryPreviousHourAsFallback(logsRef, date, currentHour, voltageReference, callback);
+                            } else {
+                                Log.w(TAG, "Skipping redundant fallback attempt — already tried once.");
+                                createEmptyCurrentHourData(callback);
+                            }
                         }
                     }
 
@@ -281,6 +308,38 @@ public class RealTimeDataProcessor {
                     }
                 });
     }
+
+
+
+
+    private void calculateRealAreaPeaksFromSnapshot(
+            DataSnapshot snapshot, RealTimeData realTimeData,
+            String date, DataProcessingCallback callback) {
+
+        double maxA1=0, maxA2=0, maxA3=0;
+        String t1="--:--", t2="--:--", t3="--:--";
+
+        for (DataSnapshot hourSnap : snapshot.getChildren()) {
+            String hour = hourSnap.getKey();
+            Double a1 = getDoubleValue(hourSnap.child("area1_peak_watts").getValue());
+            Double a2 = getDoubleValue(hourSnap.child("area2_peak_watts").getValue());
+            Double a3 = getDoubleValue(hourSnap.child("area3_peak_watts").getValue());
+            if (a1!=null && a1>maxA1){maxA1=a1;t1=hour+":00";}
+            if (a2!=null && a2>maxA2){maxA2=a2;t2=hour+":00";}
+            if (a3!=null && a3>maxA3){maxA3=a3;t3=hour+":00";}
+        }
+
+        realTimeData.area1Data.peakWatts=maxA1; realTimeData.area1Data.peakTime=t1;
+        realTimeData.area2Data.peakWatts=maxA2; realTimeData.area2Data.peakTime=t2;
+        realTimeData.area3Data.peakWatts=maxA3; realTimeData.area3Data.peakTime=t3;
+
+        double overall = Math.max(maxA1,Math.max(maxA2,maxA3));
+        realTimeData.peakWatts = Math.max(realTimeData.peakWatts, overall);
+        realTimeData.peakTime  = overall==maxA1?t1:overall==maxA2?t2:t3;
+
+        callback.onDataProcessed(realTimeData);
+    }
+
 
     /**
      * NEW METHOD: Create empty current hour data when no data is available
@@ -405,141 +464,89 @@ public class RealTimeDataProcessor {
                                                    double voltageReference, DataProcessingCallback callback) {
         Log.d(TAG, "Calculating real area peaks from log data for date: " + date);
 
-        // Use logs path instead of sensor_readings
-        DatabaseReference logDataRef = databaseRef.child("logs");
+        DatabaseReference hourlySummariesRef = databaseRef.child("hourly_summaries").child(date);
 
-        // Get today's log data using timestamp-based queries
-        String startTime = date + "T00:00:00";
-        String endTime = date + "T23:59:59";
+        hourlySummariesRef.addListenerForSingleValueEvent(new ValueEventListener() {
+            @Override
+            public void onDataChange(@NonNull DataSnapshot snapshot) {
+                if (!snapshot.exists()) {
+                    Log.w(TAG, "No hourly summaries found, using proportional fallback");
+                    useProportionalPeakDistribution(realTimeData);
+                    callback.onDataProcessed(realTimeData);
+                    return;
+                }
 
-        logDataRef.orderByKey()
-                .startAt(startTime)
-                .endAt(endTime)
-                .addListenerForSingleValueEvent(new ValueEventListener() {
-                    @Override
-                    public void onDataChange(@NonNull DataSnapshot snapshot) {
-                        if (!snapshot.exists()) {
-                            Log.w(TAG, "No log data found, using proportional fallback");
-                            useProportionalPeakDistribution(realTimeData);
-                            callback.onDataProcessed(realTimeData);
-                            return;
-                        }
+                double maxArea1 = 0, maxArea2 = 0, maxArea3 = 0;
+                String area1PeakTime = "--:--", area2PeakTime = "--:--", area3PeakTime = "--:--";
 
-                        double maxArea1 = 0, maxArea2 = 0, maxArea3 = 0;
-                        String area1PeakTime = "--:--", area2PeakTime = "--:--", area3PeakTime = "--:--";
-                        int totalReadings = 0;
+                // Scan through hourly summaries to find max peaks
+                for (DataSnapshot hourSnapshot : snapshot.getChildren()) {
+                    String hour = hourSnapshot.getKey();
 
-                        // Track fluctuations
-                        boolean area1HasFluctuation = false, area2HasFluctuation = false, area3HasFluctuation = false;
-                        double area1FluctValue = 0, area2FluctValue = 0, area3FluctValue = 0;
+                    // ✅ Read the new fields from Cloud Function
+                    Double area1Peak = getDoubleValue(hourSnapshot.child("area1_peak_watts").getValue());
+                    Double area2Peak = getDoubleValue(hourSnapshot.child("area2_peak_watts").getValue());
+                    Double area3Peak = getDoubleValue(hourSnapshot.child("area3_peak_watts").getValue());
 
-                        for (DataSnapshot logSnapshot : snapshot.getChildren()) {
-                            try {
-                                String timestamp = logSnapshot.getKey();
-
-                                // Process each data entry within the timestamp
-                                for (DataSnapshot timestampSnapshot : logSnapshot.getChildren()) {
-                                    Map<String, Object> logData = (Map<String, Object>) timestampSnapshot.getValue();
-                                    if (logData != null) {
-                                        Double current1 = getDoubleValue(logData.get("C1_A"));
-                                        Double current2 = getDoubleValue(logData.get("C2_A"));
-                                        Double current3 = getDoubleValue(logData.get("C3_A"));
-
-                                        // Check for fluctuations
-                                        Double fluct1 = getDoubleValue(logData.get("fluct1"));
-                                        Double fluct2 = getDoubleValue(logData.get("fluct2"));
-                                        Double fluct3 = getDoubleValue(logData.get("fluct3"));
-
-                                        if (current1 != null && current2 != null && current3 != null) {
-                                            // Calculate power: P = V * I
-                                            double area1Power = voltageReference * current1;
-                                            double area2Power = voltageReference * current2;
-                                            double area3Power = voltageReference * current3;
-
-                                            String timeOnly = timestamp != null && timestamp.length() >= 16 ?
-                                                    timestamp.substring(11, 16) : "--:--";
-
-                                            // Track peak values and times
-                                            if (area1Power > maxArea1) {
-                                                maxArea1 = area1Power;
-                                                area1PeakTime = timeOnly;
-                                            }
-                                            if (area2Power > maxArea2) {
-                                                maxArea2 = area2Power;
-                                                area2PeakTime = timeOnly;
-                                            }
-                                            if (area3Power > maxArea3) {
-                                                maxArea3 = area3Power;
-                                                area3PeakTime = timeOnly;
-                                            }
-
-                                            // Track fluctuations
-                                            if (fluct1 != null && fluct1 > 0) {
-                                                area1HasFluctuation = true;
-                                                area1FluctValue = Math.max(area1FluctValue, fluct1);
-                                            }
-                                            if (fluct2 != null && fluct2 > 0) {
-                                                area2HasFluctuation = true;
-                                                area2FluctValue = Math.max(area2FluctValue, fluct2);
-                                            }
-                                            if (fluct3 != null && fluct3 > 0) {
-                                                area3HasFluctuation = true;
-                                                area3FluctValue = Math.max(area3FluctValue, fluct3);
-                                            }
-
-                                            totalReadings++;
-                                        }
-                                    }
-                                }
-                            } catch (Exception e) {
-                                Log.w(TAG, "Error processing log data: " + e.getMessage());
-                            }
-                        }
-
-                        // Update real-time data with calculated peaks and fluctuations
-                        realTimeData.area1Data.peakWatts = maxArea1;
-                        realTimeData.area1Data.peakTime = area1PeakTime;
-                        realTimeData.area1Data.hasFluctuation = area1HasFluctuation;
-                        realTimeData.area1Data.fluctuationValue = area1FluctValue;
-
-                        realTimeData.area2Data.peakWatts = maxArea2;
-                        realTimeData.area2Data.peakTime = area2PeakTime;
-                        realTimeData.area2Data.hasFluctuation = area2HasFluctuation;
-                        realTimeData.area2Data.fluctuationValue = area2FluctValue;
-
-                        realTimeData.area3Data.peakWatts = maxArea3;
-                        realTimeData.area3Data.peakTime = area3PeakTime;
-                        realTimeData.area3Data.hasFluctuation = area3HasFluctuation;
-                        realTimeData.area3Data.fluctuationValue = area3FluctValue;
-
-                        Log.d(TAG, String.format("Real peaks calculated from %d log entries - A1: %.1fW@%s, A2: %.1fW@%s, A3: %.1fW@%s",
-                                totalReadings, maxArea1, area1PeakTime, maxArea2, area2PeakTime, maxArea3, area3PeakTime));
-
-                        double overallMaxPeak = Math.max(maxArea1, Math.max(maxArea2, maxArea3));
-                        String overallPeakTime = "--:--";
-
-                        if (overallMaxPeak == maxArea1) {
-                            overallPeakTime = area1PeakTime;
-                        } else if (overallMaxPeak == maxArea2) {
-                            overallPeakTime = area2PeakTime;
-                        } else if (overallMaxPeak == maxArea3) {
-                            overallPeakTime = area3PeakTime;
-                        }
-
-// Update the overall peak time with actual log data (replaces the ":XX" placeholder)
-                        realTimeData.peakTime = overallPeakTime;
-                        realTimeData.peakWatts = overallMaxPeak;
-
-                        callback.onDataProcessed(realTimeData);
+                    // Track maximum peaks across all hours
+                    if (area1Peak != null && area1Peak > maxArea1) {
+                        maxArea1 = area1Peak;
+                        area1PeakTime = hour + ":00";
                     }
-
-                    @Override
-                    public void onCancelled(@NonNull DatabaseError error) {
-                        Log.e(TAG, "Error getting log data for peaks: " + error.getMessage());
-                        useProportionalPeakDistribution(realTimeData);
-                        callback.onDataProcessed(realTimeData);
+                    if (area2Peak != null && area2Peak > maxArea2) {
+                        maxArea2 = area2Peak;
+                        area2PeakTime = hour + ":00";
                     }
-                });
+                    if (area3Peak != null && area3Peak > maxArea3) {
+                        maxArea3 = area3Peak;
+                        area3PeakTime = hour + ":00";
+                    }
+                }
+
+                // Update real-time data with calculated peaks
+                realTimeData.area1Data.peakWatts = maxArea1;
+                realTimeData.area1Data.peakTime = area1PeakTime;
+                realTimeData.area1Data.hasFluctuation = false;  // Not tracked in summaries
+                realTimeData.area1Data.fluctuationValue = 0;
+
+                realTimeData.area2Data.peakWatts = maxArea2;
+                realTimeData.area2Data.peakTime = area2PeakTime;
+                realTimeData.area2Data.hasFluctuation = false;
+                realTimeData.area2Data.fluctuationValue = 0;
+
+                realTimeData.area3Data.peakWatts = maxArea3;
+                realTimeData.area3Data.peakTime = area3PeakTime;
+                realTimeData.area3Data.hasFluctuation = false;
+                realTimeData.area3Data.fluctuationValue = 0;
+
+                // Find overall peak
+                double overallMaxPeak = Math.max(maxArea1, Math.max(maxArea2, maxArea3));
+                String overallPeakTime = "--:--";
+
+                if (overallMaxPeak == maxArea1) {
+                    overallPeakTime = area1PeakTime;
+                } else if (overallMaxPeak == maxArea2) {
+                    overallPeakTime = area2PeakTime;
+                } else if (overallMaxPeak == maxArea3) {
+                    overallPeakTime = area3PeakTime;
+                }
+
+                realTimeData.peakTime = overallPeakTime;
+                realTimeData.peakWatts = overallMaxPeak;
+
+                Log.d(TAG, String.format("✅ Peaks from summaries - A1: %.1fW@%s, A2: %.1fW@%s, A3: %.1fW@%s",
+                        maxArea1, area1PeakTime, maxArea2, area2PeakTime, maxArea3, area3PeakTime));
+
+                callback.onDataProcessed(realTimeData);
+            }
+
+            @Override
+            public void onCancelled(@NonNull DatabaseError error) {
+                Log.e(TAG, "Error reading hourly summaries: " + error.getMessage());
+                useProportionalPeakDistribution(realTimeData);
+                callback.onDataProcessed(realTimeData);
+            }
+        });
     }
 
     /**
@@ -711,6 +718,8 @@ public class RealTimeDataProcessor {
      */
     public void processRealTimeData(String date, DataProcessingCallback callback) {
         loadSystemSettingsAndProcess(date, new DataProcessingCallback() {
+
+
             @Override
             public void onSettingsLoaded(double electricityRate, double voltageReference) {
                 processHourlyDataWithCurrentHour(date, electricityRate, voltageReference, callback);

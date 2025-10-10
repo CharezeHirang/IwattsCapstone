@@ -27,6 +27,7 @@ import com.google.firebase.database.FirebaseDatabase;
 import com.google.firebase.database.MutableData;
 import com.google.firebase.database.Transaction;
 import com.google.firebase.database.ValueEventListener;
+import com.google.firebase.messaging.FirebaseMessaging;
 
 import java.text.SimpleDateFormat;
 import java.util.Date;
@@ -229,11 +230,29 @@ public class AlertActivity extends AppCompatActivity {
         settingsRef.child("push_enabled").setValue(switchPush != null && switchPush.isChecked())
                 .addOnSuccessListener(aVoid -> Toast.makeText(AlertActivity.this, "Settings saved", Toast.LENGTH_SHORT).show())
                 .addOnFailureListener(e -> Toast.makeText(AlertActivity.this, "Failed to save", Toast.LENGTH_SHORT).show());
+        if (switchPush != null) {
+            if (switchPush.isChecked()) {
+                FirebaseMessaging.getInstance()
+                        .subscribeToTopic("iwatts_alerts")
+                        .addOnCompleteListener(task -> {
+                            if (task.isSuccessful()) {
+                                Toast.makeText(AlertActivity.this, "Push notifications enabled", Toast.LENGTH_SHORT).show();
+                            } else {
+                                Toast.makeText(AlertActivity.this, "Failed to enable push", Toast.LENGTH_SHORT).show();
+                            }
+                        });
+            } else {
+                FirebaseMessaging.getInstance()
+                        .unsubscribeFromTopic("iwatts_alerts")
+                        .addOnCompleteListener(task ->
+                                Toast.makeText(AlertActivity.this, "Push notifications disabled", Toast.LENGTH_SHORT).show());
+            }
+        }
 
         // Send toggle alerts for voltage and system updates
         if (switchVoltage != null && switchVoltage.isChecked()) {
             notifyNow("Voltage Fluctuation", "You will receive voltage fluctuation messages.");
-            startVoltageMonitoring();
+            //startVoltageMonitoring();
         } else {
             notifyNow("Voltage Fluctuation", "You won't receive voltage fluctuation messages.");
         }
@@ -251,7 +270,7 @@ public class AlertActivity extends AppCompatActivity {
             notifyNow("Push Notifications", "You can directly see notifications in the app.");
         }
         // Always start threshold monitoring for in-app notifications, regardless of push toggle
-        startThresholdMonitoring();
+        //startThresholdMonitoring();
     }
 
     private boolean hasNotificationPermission() {

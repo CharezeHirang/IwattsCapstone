@@ -40,6 +40,7 @@ dependencies {
     implementation("com.github.bumptech.glide:glide:4.16.0")
     implementation("androidx.swiperefreshlayout:swiperefreshlayout:1.1.0")
     implementation("com.google.firebase:firebase-messaging:24.0.0")
+    implementation("com.google.firebase:firebase-analytics:22.0.2")
     implementation(libs.appcompat)
     implementation(libs.material)
     implementation(libs.activity)
