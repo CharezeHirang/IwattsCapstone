@@ -240,7 +240,7 @@ public class AlertActivity extends AppCompatActivity {
         // Send toggle alerts for voltage and system updates
         if (switchVoltage != null && switchVoltage.isChecked()) {
             notifyNow("Voltage Fluctuation", "You will receive voltage fluctuation messages.");
-            startVoltageMonitoring();
+            //startVoltageMonitoring();
         } else {
             notifyNow("Voltage Fluctuation", "You won't receive voltage fluctuation messages.");
         }
@@ -267,7 +267,7 @@ public class AlertActivity extends AppCompatActivity {
         }
         
         // Always start threshold monitoring for in-app notifications, regardless of push toggle
-        startThresholdMonitoring();
+        //startThresholdMonitoring();
         
         // Reset backend notification flags when new thresholds are set
         resetBackendNotificationFlags();

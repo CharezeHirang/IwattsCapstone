@@ -45,5 +45,6 @@
       }
     }
   ],
-  "configuration_version": "1"
+  "configuration_version": "1",
+  "gcm_sender_id": "740611547759"
 }
