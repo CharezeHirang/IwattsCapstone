@@ -33,7 +33,11 @@ public class NotificationMonitorService extends Service {
     private static final String CHANNEL_ID = "monitoring_channel";
     private static final String ALERT_CHANNEL_ID = "alerts_channel";
     private static final int FOREGROUND_ID = 2001;
-    
+    private ChildEventListener alertsListener;
+    private String lastAlertKeyProcessed = null;
+    private android.os.Handler alertsDebounceHandler;
+    private Runnable saveLastKeyRunnable;
+    private static final long DEBOUNCE_DELAY = 2000;
     private DatabaseReference db;
     private ValueEventListener thresholdListener;
     private ValueEventListener voltageListener;
@@ -100,17 +104,20 @@ public class NotificationMonitorService extends Service {
         
         // Start monitoring
         Log.d(TAG, "🚀 Starting threshold monitoring...");
-        startThresholdMonitoring();
+       // startThresholdMonitoring();
         
         Log.d(TAG, "🚀 Starting voltage monitoring...");
-        startVoltageMonitoring();
+       // startVoltageMonitoring();
         
         Log.d(TAG, "🚀 Starting hourly summaries monitoring...");
-        startHourlySummariesMonitoring();
+       // startHourlySummariesMonitoring();
         
         // Start periodic checks every 30 seconds to catch any missed changes
         Log.d(TAG, "⏰ Starting periodic checks (every 30 seconds)...");
-        startPeriodicChecks();
+       // startPeriodicChecks();
+
+        Log.d(TAG, "🚀 Starting /alerts monitoring...");
+        startAlertsMonitoring();
         
         // Perform initial threshold check after a short delay
         new android.os.Handler().postDelayed(() -> {
@@ -522,6 +529,202 @@ public class NotificationMonitorService extends Service {
                 Log.e(TAG, "❌ Error getting latest log bucket: " + error.getMessage());
             }
         });
+    }
+
+    private void startAlertsMonitoring() {
+        Log.d(TAG, "🚀 Starting OPTIMIZED /alerts monitoring");
+
+        alertsDebounceHandler = new android.os.Handler();
+
+        // Load last processed key first
+        db.child("notification_settings").child("last_alert_processed")
+                .addListenerForSingleValueEvent(new ValueEventListener() {
+                    @Override
+                    public void onDataChange(DataSnapshot snapshot) {
+                        lastAlertKeyProcessed = snapshot.getValue(String.class);
+                        Log.d(TAG, "📥 Starting from alert key: " + lastAlertKeyProcessed);
+                        setupAlertsListener();
+                    }
+
+                    @Override
+                    public void onCancelled(DatabaseError error) {
+                        Log.e(TAG, "❌ Error loading last alert key: " + error.getMessage());
+                        setupAlertsListener();
+                    }
+                });
+    }
+
+    private void setupAlertsListener() {
+        DatabaseReference alertsRef = db.child("alerts");
+
+        alertsListener = new ChildEventListener() {
+            @Override
+            public void onChildAdded(DataSnapshot snapshot, String previousChildName) {
+                String alertKey = snapshot.getKey();
+                if (alertKey == null) return;
+
+                // Skip if already processed
+                if (lastAlertKeyProcessed != null && alertKey.compareTo(lastAlertKeyProcessed) <= 0) {
+                    Log.d(TAG, "⏭️ Skipping old alert: " + alertKey);
+                    return;
+                }
+
+                lastAlertKeyProcessed = alertKey;
+                debounceSaveLastKey(alertKey);
+
+                // Check if deleted
+                Boolean delete = snapshot.child("delete").getValue(Boolean.class);
+                if (Boolean.TRUE.equals(delete)) {
+                    Log.d(TAG, "⏭️ Skipping deleted alert");
+                    return;
+                }
+
+                String type = snapshot.child("type").getValue(String.class);
+
+                // Check if should send push
+                if (!shouldSendPushNotification(type)) {
+                    Log.d(TAG, "⏭️ Push disabled for type: " + type);
+                    return;
+                }
+
+                String title = snapshot.child("title").getValue(String.class);
+                String message = snapshot.child("message").getValue(String.class);
+
+                if (title == null || message == null) {
+                    Log.e(TAG, "❌ Invalid alert - missing title/message");
+                    return;
+                }
+
+                Log.d(TAG, "🔔 NEW ALERT: " + type + " - " + title);
+                sendPushNotificationAsync(title, message);
+            }
+
+            @Override
+            public void onChildChanged(DataSnapshot snapshot, String previousChildName) {}
+
+            @Override
+            public void onChildRemoved(DataSnapshot snapshot) {}
+
+            @Override
+            public void onChildMoved(DataSnapshot snapshot, String previousChildName) {}
+
+            @Override
+            public void onCancelled(DatabaseError error) {
+                Log.e(TAG, "❌ Alerts monitoring cancelled: " + error.getMessage());
+            }
+        };
+
+        // Setup listener
+        if (lastAlertKeyProcessed != null) {
+            alertsRef.orderByKey().startAfter(lastAlertKeyProcessed)
+                    .addChildEventListener(alertsListener);
+            Log.d(TAG, "✅ Listening for alerts after: " + lastAlertKeyProcessed);
+        } else {
+            // First time - initialize to latest
+            alertsRef.orderByKey().limitToLast(1)
+                    .addListenerForSingleValueEvent(new ValueEventListener() {
+                        @Override
+                        public void onDataChange(DataSnapshot snapshot) {
+                            for (DataSnapshot child : snapshot.getChildren()) {
+                                lastAlertKeyProcessed = child.getKey();
+                                Log.d(TAG, "✅ Initialized to latest: " + lastAlertKeyProcessed);
+                            }
+
+                            if (lastAlertKeyProcessed != null) {
+                                alertsRef.orderByKey().startAfter(lastAlertKeyProcessed)
+                                        .addChildEventListener(alertsListener);
+                            } else {
+                                alertsRef.addChildEventListener(alertsListener);
+                            }
+                        }
+
+                        @Override
+                        public void onCancelled(DatabaseError error) {
+                            alertsRef.addChildEventListener(alertsListener);
+                        }
+                    });
+        }
+    }
+
+    private void debounceSaveLastKey(String key) {
+        if (saveLastKeyRunnable != null && alertsDebounceHandler != null) {
+            alertsDebounceHandler.removeCallbacks(saveLastKeyRunnable);
+        }
+
+        saveLastKeyRunnable = () -> {
+            db.child("notification_settings").child("last_alert_processed")
+                    .setValue(key, (error, ref) -> {
+                        if (error == null) {
+                            Log.d(TAG, "💾 Saved last alert key: " + key);
+                        }
+                    });
+        };
+
+        if (alertsDebounceHandler != null) {
+            alertsDebounceHandler.postDelayed(saveLastKeyRunnable, DEBOUNCE_DELAY);
+        }
+    }
+
+    private void sendPushNotificationAsync(String title, String message) {
+        new Thread(() -> {
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    NotificationManager manager = getSystemService(NotificationManager.class);
+                    if (manager != null && !manager.areNotificationsEnabled()) {
+                        Log.e(TAG, "❌ Notifications disabled in settings");
+                        return;
+                    }
+                }
+
+                Intent intent = new Intent(this, NotificationActivity.class);
+                intent.putExtra("alert_title", title);
+                intent.putExtra("alert_message", message);
+                intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_NEW_TASK);
+
+                int requestCode = (int) System.currentTimeMillis();
+                PendingIntent pendingIntent = PendingIntent.getActivity(
+                        this, requestCode, intent,
+                        PendingIntent.FLAG_ONE_SHOT | PendingIntent.FLAG_IMMUTABLE
+                );
+
+                NotificationCompat.Builder builder = new NotificationCompat.Builder(this, ALERT_CHANNEL_ID)
+                        .setSmallIcon(R.drawable.ic_notification)
+                        .setContentTitle(title)
+                        .setContentText(message)
+                        .setStyle(new NotificationCompat.BigTextStyle().bigText(message))
+                        .setAutoCancel(true)
+                        .setPriority(NotificationCompat.PRIORITY_HIGH)
+                        .setDefaults(NotificationCompat.DEFAULT_ALL)
+                        .setContentIntent(pendingIntent);
+
+                NotificationManager manager = getSystemService(NotificationManager.class);
+                if (manager != null) {
+                    manager.notify(requestCode, builder.build());
+                    Log.d(TAG, "✅ Push sent: " + title);
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "❌ Error sending notification: " + e.getMessage());
+            }
+        }).start();
+    }
+
+    private boolean shouldSendPushNotification(String type) {
+        if (!pushEnabled) return false;
+        if (type == null) return true;
+
+        switch (type) {
+            case "fluctuation":
+                return voltageEnabled;
+            case "systemUpdates":
+                return systemUpdatesEnabled;
+            case "budget":
+            case "power":
+            case "consumption":
+            case "general":
+                return true;
+            default:
+                return true;
+        }
     }
     
     private void setupServiceVoltageListener() {
@@ -985,7 +1188,17 @@ public class NotificationMonitorService extends Service {
             periodicHandler.removeCallbacks(periodicRunnable);
             periodicHandler = null;
         }
-        
+        if (alertsDebounceHandler != null && saveLastKeyRunnable != null) {
+            alertsDebounceHandler.removeCallbacks(saveLastKeyRunnable);
+
+            if (lastAlertKeyProcessed != null) {
+                db.child("notification_settings").child("last_alert_processed")
+                        .setValue(lastAlertKeyProcessed);
+            }
+
+            alertsDebounceHandler = null;
+            saveLastKeyRunnable = null;
+        }
         // Remove listeners
         if (thresholdListener != null) {
             db.child("threshold").removeEventListener(thresholdListener);
