@@ -251,17 +251,32 @@ public class AlertActivity extends AppCompatActivity {
             notifyNow("System Updates", "You won't receive system updates notifications.");
         }
         
-        // Send toggle alert for push notifications
-        if (switchPush != null && switchPush.isChecked()) {
-            notifyNow("Push Notifications", "You will see push notifications.");
+        // Save Push switch state to Firebase so the service can access it
+        boolean pushEnabled = switchPush != null && switchPush.isChecked();
+        db.child("notification_settings").child("push_enabled").setValue(pushEnabled);
+        
+        // Always start background monitoring service for continuous threshold checking
+        // The service will always run to detect changes automatically
+        startBackgroundMonitoringService();
+        
+        // Send notification about Push switch state
+        if (pushEnabled) {
+            notifyNow("Push Notifications", "Background monitoring enabled. You will receive notifications even when the app is minimized.");
         } else {
-            notifyNow("Push Notifications", "You can directly see notifications in the app.");
+            notifyNow("Push Notifications", "In-app monitoring enabled. You will receive notifications while the app is running.");
         }
+        
         // Always start threshold monitoring for in-app notifications, regardless of push toggle
         startThresholdMonitoring();
         
         // Reset backend notification flags when new thresholds are set
         resetBackendNotificationFlags();
+        
+        // Always trigger immediate threshold check
+        new android.os.Handler().postDelayed(() -> {
+            checkServiceStatus();
+            triggerManualThresholdCheck();
+        }, 1000);
     }
 
     private boolean hasNotificationPermission() {
@@ -323,6 +338,204 @@ public class AlertActivity extends AppCompatActivity {
                 
                 android.util.Log.d("FCM", "✅ FCM token saved to database");
             });
+    }
+
+    private void startBackgroundMonitoringService() {
+        android.util.Log.d("BackgroundService", "🚀 Starting background monitoring service");
+        Intent serviceIntent = new Intent(this, NotificationMonitorService.class);
+        try {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                startForegroundService(serviceIntent);
+                android.util.Log.d("BackgroundService", "✅ Foreground service started");
+            } else {
+                startService(serviceIntent);
+                android.util.Log.d("BackgroundService", "✅ Background service started");
+            }
+        } catch (Exception e) {
+            android.util.Log.e("BackgroundService", "❌ Failed to start service: " + e.getMessage());
+        }
+    }
+
+    private void stopBackgroundMonitoringService() {
+        android.util.Log.d("BackgroundService", "🛑 Stopping background monitoring service");
+        Intent serviceIntent = new Intent(this, NotificationMonitorService.class);
+        stopService(serviceIntent);
+    }
+
+    private void checkServiceStatus() {
+        android.app.ActivityManager manager = (android.app.ActivityManager) getSystemService(Context.ACTIVITY_SERVICE);
+        boolean isServiceRunning = false;
+        
+        if (manager != null) {
+            for (android.app.ActivityManager.RunningServiceInfo service : manager.getRunningServices(Integer.MAX_VALUE)) {
+                if (NotificationMonitorService.class.getName().equals(service.service.getClassName())) {
+                    isServiceRunning = true;
+                    break;
+                }
+            }
+        }
+        
+        android.util.Log.d("BackgroundService", "🔍 Service status: " + (isServiceRunning ? "RUNNING" : "NOT RUNNING"));
+        
+        if (!isServiceRunning) {
+            android.util.Log.w("BackgroundService", "⚠️ Service not running, attempting to restart");
+            startBackgroundMonitoringService();
+        }
+    }
+
+    private void triggerManualThresholdCheck() {
+        android.util.Log.d("BackgroundService", "🔍 Triggering manual threshold check");
+        Intent serviceIntent = new Intent(this, NotificationMonitorService.class);
+        serviceIntent.setAction("MANUAL_CHECK");
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            startForegroundService(serviceIntent);
+        } else {
+            startService(serviceIntent);
+        }
+    }
+
+    private void triggerImmediateInAppCheck() {
+        android.util.Log.d("InAppCheck", "🔍 Triggering immediate in-app threshold check");
+        
+        // Get current threshold values
+        String kwhText = etPowerValue != null && etPowerValue.getText() != null ? etPowerValue.getText().toString().trim() : "";
+        String costText = etBudgetValue != null && etBudgetValue.getText() != null ? etBudgetValue.getText().toString().trim() : "";
+        
+        Double kwhLimit = null, costLimit = null;
+        if (!kwhText.isEmpty()) {
+            try { kwhLimit = Double.parseDouble(kwhText); } catch (Exception e) {}
+        }
+        if (!costText.isEmpty()) {
+            try { costLimit = Double.parseDouble(costText); } catch (Exception e) {}
+        }
+        
+        if (kwhLimit == null && costLimit == null) {
+            android.util.Log.d("InAppCheck", "⚠️ No threshold limits set");
+            return;
+        }
+        
+        android.util.Log.d("InAppCheck", "🔍 Limits: Cost=" + costLimit + ", kWh=" + kwhLimit);
+        
+        // Get date range and check current totals
+        Double finalCostLimit = costLimit;
+        Double finalKwhLimit = kwhLimit;
+        db.child("cost_filter_date").addListenerForSingleValueEvent(new ValueEventListener() {
+            @Override
+            public void onDataChange(DataSnapshot filterSnapshot) {
+                String startDate = filterSnapshot.child("starting_date").getValue(String.class);
+                String endDate = filterSnapshot.child("ending_date").getValue(String.class);
+                
+                if (startDate == null || endDate == null) {
+                    android.util.Log.d("InAppCheck", "⚠️ No date range set");
+                    return;
+                }
+                
+                android.util.Log.d("InAppCheck", "🔍 Date range: " + startDate + " to " + endDate);
+                
+                // Get hourly summaries and calculate totals
+                db.child("hourly_summaries").addListenerForSingleValueEvent(new ValueEventListener() {
+                    @Override
+                    public void onDataChange(DataSnapshot hourlySnapshot) {
+                        double totalCost = 0.0;
+                        double totalKwh = 0.0;
+                        
+                        for (DataSnapshot dateSnap : hourlySnapshot.getChildren()) {
+                            String dateKey = dateSnap.getKey();
+                            if (dateKey != null && dateKey.compareTo(startDate) >= 0 && dateKey.compareTo(endDate) <= 0) {
+                                for (DataSnapshot hourSnap : dateSnap.getChildren()) {
+                                    Double cost = hourSnap.child("total_cost").getValue(Double.class);
+                                    Double kwh = hourSnap.child("total_kwh").getValue(Double.class);
+                                    if (cost != null) totalCost += cost;
+                                    if (kwh != null) totalKwh += kwh;
+                                }
+                            }
+                        }
+                        
+                        android.util.Log.d("InAppCheck", String.format("📊 Current Totals: Cost=%.2f (limit=%.2f), kWh=%.3f (limit=%.3f)", 
+                            totalCost, finalCostLimit != null ? finalCostLimit : 0.0,
+                            totalKwh, finalKwhLimit != null ? finalKwhLimit : 0.0));
+                        
+                        // Check thresholds and send in-app notifications
+                        checkAndSendInAppNotifications(totalCost, totalKwh, finalCostLimit, finalKwhLimit);
+                    }
+                    @Override
+                    public void onCancelled(DatabaseError error) {
+                        android.util.Log.e("InAppCheck", "❌ Error getting hourly summaries: " + error.getMessage());
+                    }
+                });
+            }
+            @Override
+            public void onCancelled(DatabaseError error) {
+                android.util.Log.e("InAppCheck", "❌ Error getting date range: " + error.getMessage());
+            }
+        });
+    }
+
+    private void checkAndSendInAppNotifications(double totalCost, double totalKwh, Double costLimit, Double kwhLimit) {
+        boolean costNear = false, costReached = false, costExceeded = false;
+        boolean kwhNear = false, kwhReached = false, kwhExceeded = false;
+        
+        double costPercent = 0.0, kwhPercent = 0.0;
+        
+        if (costLimit != null && costLimit > 0) {
+            costPercent = (totalCost / costLimit) * 100.0;
+            costNear = (costPercent >= 85.0 - 0.01) && (costPercent < 100.0 - 0.01);
+            costReached = ((totalCost + 0.01 >= costLimit) || (costPercent >= 100.0 - 0.01)) && (costPercent < 101.0 - 0.01);
+            costExceeded = costPercent >= 101.0 - 0.01;
+        }
+        
+        if (kwhLimit != null && kwhLimit > 0) {
+            kwhPercent = (totalKwh / kwhLimit) * 100.0;
+            kwhNear = (kwhPercent >= 85.0 - 0.01) && (kwhPercent < 100.0 - 0.01);
+            kwhReached = ((totalKwh + 0.001 >= kwhLimit) || (kwhPercent >= 100.0 - 0.01)) && (kwhPercent < 101.0 - 0.01);
+            kwhExceeded = kwhPercent >= 101.0 - 0.01;
+        }
+        
+        android.util.Log.d("InAppCheck", String.format("📊 Threshold check - Cost: %.2f%% (near=%s, reached=%s, exceeded=%s), kWh: %.3f%% (near=%s, reached=%s, exceeded=%s)", 
+            costPercent, costNear, costReached, costExceeded, kwhPercent, kwhNear, kwhReached, kwhExceeded));
+        
+        // Send notifications for current state
+        if (costExceeded || kwhExceeded) {
+            if (costExceeded && kwhExceeded) {
+                double costOver = Math.max(0, costPercent - 100.0);
+                double kwhOver = Math.max(0, kwhPercent - 100.0);
+                notifyNow("Budget & Energy Limit Exceeded",
+                    String.format("You've exceeded both limits: Budget by %d%% and Energy by %d%%.", 
+                    Math.round(costOver), Math.round(kwhOver)));
+            } else if (costExceeded) {
+                double over = Math.max(0, costPercent - 100.0);
+                notifyNow("Budget Exceeded",
+                    String.format("You've gone over your budget by %d%%: ₱%.2f of ₱%.2f.", 
+                    Math.round(over), totalCost, costLimit));
+            } else if (kwhExceeded) {
+                double over = Math.max(0, kwhPercent - 100.0);
+                notifyNow("Energy Limit Exceeded",
+                    String.format("You've exceeded your energy limit by %d%%: %.3f kWh of %.3f kWh.", 
+                    Math.round(over), totalKwh, kwhLimit));
+            }
+        } else if (costReached || kwhReached) {
+            if (costReached && kwhReached) {
+                notifyNow("Budget & Energy Reached (100%%)",
+                    String.format("You've reached both limits: ₱%.2f and %.3f kWh.", totalCost, totalKwh));
+            } else if (costReached) {
+                notifyNow("Budget Reached (100%%)",
+                    String.format("You've reached your budget: ₱%.2f of ₱%.2f (100%%).", totalCost, costLimit));
+            } else if (kwhReached) {
+                notifyNow("Energy Limit Reached (100%%)",
+                    String.format("You've reached your energy limit: %.3f kWh of %.3f kWh (100%%).", totalKwh, kwhLimit));
+            }
+        } else if (costNear || kwhNear) {
+            if (costNear) {
+                notifyNow("Approaching Budget Limit",
+                    String.format("You're approaching your budget limit: %d%% (₱%.2f of ₱%.2f)", 
+                    Math.round(costPercent), totalCost, costLimit));
+            }
+            if (kwhNear) {
+                notifyNow("Approaching Energy Limit",
+                    String.format("You're approaching your energy limit: %d%% (%.3f kWh of %.3f kWh)", 
+                    Math.round(kwhPercent), totalKwh, kwhLimit));
+            }
+        }
     }
 
     private void resetBackendNotificationFlags() {
