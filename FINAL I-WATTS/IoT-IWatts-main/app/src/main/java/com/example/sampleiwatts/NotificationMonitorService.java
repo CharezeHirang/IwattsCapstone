@@ -17,6 +17,7 @@ import com.google.firebase.database.DatabaseError;
 import com.google.firebase.database.DatabaseReference;
 import com.google.firebase.database.FirebaseDatabase;
 import com.google.firebase.database.ValueEventListener;
+import com.google.firebase.database.ChildEventListener;
 
 import java.text.SimpleDateFormat;
 import java.util.Date;
@@ -36,6 +37,7 @@ public class NotificationMonitorService extends Service {
     private DatabaseReference db;
     private ValueEventListener thresholdListener;
     private ValueEventListener voltageListener;
+    private ChildEventListener voltageChildListener;
     private ValueEventListener hourlySummariesListener;
     private android.os.Handler periodicHandler;
     private Runnable periodicRunnable;
@@ -134,16 +136,29 @@ public class NotificationMonitorService extends Service {
                 NotificationManager.IMPORTANCE_LOW
             );
             monitoringChannel.setDescription("Keeps the app monitoring for alerts in the background");
+            monitoringChannel.enableLights(false);
+            monitoringChannel.enableVibration(false);
+            monitoringChannel.setShowBadge(false);
             manager.createNotificationChannel(monitoringChannel);
             
-            // Channel for alerts
+            // Channel for alerts - CRITICAL for background notifications
             NotificationChannel alertChannel = new NotificationChannel(
                 ALERT_CHANNEL_ID,
-                "Alerts",
+                "I-WATTS Alerts",
                 NotificationManager.IMPORTANCE_HIGH
             );
-            alertChannel.setDescription("Important alerts and notifications");
+            alertChannel.setDescription("Important energy consumption alerts and notifications");
+            alertChannel.enableLights(true);
+            alertChannel.enableVibration(true);
+            alertChannel.setShowBadge(true);
+            alertChannel.setLockscreenVisibility(android.app.Notification.VISIBILITY_PUBLIC);
+            // Enable bypassing Do Not Disturb for critical alerts
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                alertChannel.setBypassDnd(true);
+            }
             manager.createNotificationChannel(alertChannel);
+            
+            Log.d(TAG, "✅ Notification channels created for background notifications");
         }
     }
 
@@ -477,51 +492,36 @@ public class NotificationMonitorService extends Service {
     }
 
     private void startVoltageMonitoring() {
-        Log.d(TAG, "🚀 Starting voltage monitoring - checking initialization");
-        
-        // Wait a moment to ensure lastVoltageKeyNotified is loaded from onCreate
-        new android.os.Handler().postDelayed(() -> {
-            DatabaseReference logsRef = db.child("logs");
-            
-            // Get the absolute latest entry first
-            logsRef.limitToLast(1).addListenerForSingleValueEvent(new ValueEventListener() {
-                @Override
-                public void onDataChange(DataSnapshot snapshot) {
-                    // Find the absolute latest entry
-                    DataSnapshot latestDate = null;
-                    for (DataSnapshot d : snapshot.getChildren()) latestDate = d;
-                    
-                    String currentLatestKey = null;
-                    if (latestDate != null) {
-                        DataSnapshot latestEntry = null;
-                        for (DataSnapshot e : latestDate.getChildren()) latestEntry = e;
-                        
-                        if (latestEntry != null) {
-                            currentLatestKey = latestEntry.getKey();
-                        }
-                    }
-                    
-                    // If no lastVoltageKeyNotified is set, initialize to current latest
-                    if (lastVoltageKeyNotified == null || lastVoltageKeyNotified.isEmpty()) {
-                        lastVoltageKeyNotified = currentLatestKey;
-                        if (lastVoltageKeyNotified != null) {
-                            db.child("notification_settings").child("last_voltage_notified").setValue(lastVoltageKeyNotified);
-                            Log.d(TAG, "⚡ Initialized last voltage key to CURRENT latest: " + lastVoltageKeyNotified);
-                        }
-                    } else {
-                        Log.d(TAG, "⚡ Using existing last voltage key: " + lastVoltageKeyNotified);
-                    }
-                    
-                    // Now set up the ongoing listener for FUTURE changes only
-                    setupServiceVoltageListener();
+        Log.d(TAG, "🚀 Starting voltage monitoring - low-latency mode");
+        DatabaseReference logsRef = db.child("logs");
+        // Get the latest date bucket, then attach a child listener to that bucket for instant updates
+        logsRef.limitToLast(1).addListenerForSingleValueEvent(new ValueEventListener() {
+            @Override
+            public void onDataChange(DataSnapshot snapshot) {
+                DataSnapshot latestDateSnap = null;
+                for (DataSnapshot d : snapshot.getChildren()) latestDateSnap = d;
+                if (latestDateSnap == null) {
+                    Log.d(TAG, "⚠️ No logs date bucket found yet");
+                    return;
                 }
-                @Override
-                public void onCancelled(DatabaseError error) {
-                    Log.e(TAG, "❌ Error getting latest log: " + error.getMessage());
-                    setupServiceVoltageListener(); // Set up listener anyway
+                String latestDateKey = latestDateSnap.getKey();
+                // Initialize last key to current latest to avoid historical spam
+                DataSnapshot latestEntry = null;
+                for (DataSnapshot e : latestDateSnap.getChildren()) latestEntry = e;
+                if ((lastVoltageKeyNotified == null || lastVoltageKeyNotified.isEmpty()) && latestEntry != null) {
+                    lastVoltageKeyNotified = latestEntry.getKey();
+                    if (lastVoltageKeyNotified != null) {
+                        db.child("notification_settings").child("last_voltage_notified").setValue(lastVoltageKeyNotified);
+                        Log.d(TAG, "⚡ Initialized last voltage key to CURRENT latest: " + lastVoltageKeyNotified);
+                    }
                 }
-            });
-        }, 500); // Small delay to ensure lastVoltageKeyNotified from onCreate is loaded
+                setupServiceVoltageChildListener(latestDateKey);
+            }
+            @Override
+            public void onCancelled(DatabaseError error) {
+                Log.e(TAG, "❌ Error getting latest log bucket: " + error.getMessage());
+            }
+        });
     }
     
     private void setupServiceVoltageListener() {
@@ -628,6 +628,78 @@ public class NotificationMonitorService extends Service {
         });
     }
 
+    private void setupServiceVoltageChildListener(String dateKey) {
+        if (dateKey == null) {
+            Log.e(TAG, "⚠️ Cannot setup child listener - dateKey is null");
+            return;
+        }
+        Log.d(TAG, "🔎 Attaching ChildEventListener to logs/" + dateKey + " for instant fluctuations");
+        DatabaseReference dateRef = db.child("logs").child(dateKey);
+        // Remove previous child listener if any
+        if (voltageChildListener != null) {
+            dateRef.removeEventListener(voltageChildListener);
+        }
+        voltageChildListener = new ChildEventListener() {
+            @Override public void onChildAdded(DataSnapshot latestEntry, String previousChildName) {
+                handleVoltageEntry(dateKey, latestEntry);
+            }
+            @Override public void onChildChanged(DataSnapshot snapshot, String previousChildName) {
+                // Optional: handle updates to the latest entry as well
+                handleVoltageEntry(dateKey, snapshot);
+            }
+            @Override public void onChildRemoved(DataSnapshot snapshot) { }
+            @Override public void onChildMoved(DataSnapshot snapshot, String previousChildName) { }
+            @Override public void onCancelled(DatabaseError error) {
+                Log.e(TAG, "❌ Voltage child listener cancelled: " + error.getMessage());
+            }
+        };
+        // Order by key and only stream the last one and future ones for minimal initial callbacks
+        dateRef.orderByKey().limitToLast(1).addChildEventListener(voltageChildListener);
+    }
+
+    private void handleVoltageEntry(String dateKey, DataSnapshot latestEntry) {
+        if (latestEntry == null) return;
+        String key = latestEntry.getKey();
+        if (key == null) return;
+        // Skip duplicates/older
+        if (lastVoltageKeyNotified != null && key.compareTo(lastVoltageKeyNotified) <= 0) {
+            Log.d(TAG, "⏭️ Skipping non-new entry: " + key);
+            return;
+        }
+        Integer f1 = latestEntry.child("Fluct1").getValue(Integer.class);
+        Integer f2 = latestEntry.child("Fluct2").getValue(Integer.class);
+        Integer f3 = latestEntry.child("Fluct3").getValue(Integer.class);
+        boolean a1 = (f1 != null && f1 == 1);
+        boolean a2 = (f2 != null && f2 == 1);
+        boolean a3 = (f3 != null && f3 == 1);
+
+        // Update processed key immediately
+        String previousKey = lastVoltageKeyNotified;
+        lastVoltageKeyNotified = key;
+        db.child("notification_settings").child("last_voltage_notified").setValue(key);
+
+        if (!(a1 || a2 || a3)) {
+            Log.d(TAG, "Voltage entry updated with no fluctuation flags. Key=" + key);
+            return;
+        }
+        if (!voltageEnabled) {
+            Log.d(TAG, "⏭️ Fluctuation detected but voltage switch OFF - skipping");
+            return;
+        }
+        StringBuilder msg = new StringBuilder("Voltage fluctuation detected in ");
+        if (a1) msg.append("Area 1 ");
+        if (a2) msg.append("Area 2 ");
+        if (a3) msg.append("Area 3 ");
+        try {
+            SimpleDateFormat input = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.getDefault());
+            SimpleDateFormat out = new SimpleDateFormat("MMM dd, yyyy hh:mm:ss a", Locale.getDefault());
+            Date ts = input.parse(key);
+            if (ts != null) msg.append("at ").append(out.format(ts));
+        } catch (Exception ignored) { msg.append("at ").append(key); }
+        Log.d(TAG, "⚡ INSTANT VOLTAGE ALERT: " + msg.toString().trim() + " (prev=" + previousKey + ", cur=" + key + ")");
+        sendNotification("Voltage Fluctuation", msg.toString());
+    }
+
     private void sendNotification(String title, String message) {
         Log.d(TAG, "🔔 Sending notification: " + title);
         
@@ -638,27 +710,48 @@ public class NotificationMonitorService extends Service {
         // Only send push notification if pushEnabled switch is ON
         if (pushEnabled) {
             Log.d(TAG, "📲 Push enabled - sending push notification");
-        Intent intent = new Intent(this, NotificationActivity.class);
-        intent.putExtra("alert_title", title);
-        intent.putExtra("alert_message", message);
-        intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
-        
-        PendingIntent pendingIntent = PendingIntent.getActivity(
-            this, 0, intent, PendingIntent.FLAG_ONE_SHOT | PendingIntent.FLAG_IMMUTABLE
-        );
+            
+            // Check notification permissions for Android 13+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                NotificationManager manager = getSystemService(NotificationManager.class);
+                if (manager != null && !manager.areNotificationsEnabled()) {
+                    Log.e(TAG, "❌ Notifications are disabled in system settings!");
+                    return;
+                }
+            }
+            
+            Intent intent = new Intent(this, NotificationActivity.class);
+            intent.putExtra("alert_title", title);
+            intent.putExtra("alert_message", message);
+            intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_NEW_TASK);
+            
+            // Use unique request code for each notification
+            int requestCode = (int) System.currentTimeMillis();
+            PendingIntent pendingIntent = PendingIntent.getActivity(
+                this, requestCode, intent, PendingIntent.FLAG_ONE_SHOT | PendingIntent.FLAG_IMMUTABLE
+            );
 
-        NotificationCompat.Builder builder = new NotificationCompat.Builder(this, ALERT_CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle(title)
-            .setContentText(message)
-            .setAutoCancel(true)
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setContentIntent(pendingIntent);
+            NotificationCompat.Builder builder = new NotificationCompat.Builder(this, ALERT_CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_notification)
+                .setContentTitle(title)
+                .setContentText(message)
+                .setStyle(new NotificationCompat.BigTextStyle().bigText(message))
+                .setAutoCancel(true)
+                .setOngoing(false)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setDefaults(NotificationCompat.DEFAULT_ALL)
+                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+                .setContentIntent(pendingIntent);
 
-        NotificationManager manager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-        if (manager != null) {
-            manager.notify((int) System.currentTimeMillis(), builder.build());
-                Log.d(TAG, "✅ Push notification sent");
+            NotificationManager manager = getSystemService(NotificationManager.class);
+            if (manager != null) {
+                // Use unique notification ID for each notification
+                int notificationId = requestCode;
+                manager.notify(notificationId, builder.build());
+                Log.d(TAG, "✅ Push notification sent with ID: " + notificationId);
+                Log.d(TAG, "📱 Notification should appear even when app is in background");
+            } else {
+                Log.e(TAG, "❌ NotificationManager is null!");
             }
         } else {
             Log.d(TAG, "🔕 Push disabled - notification saved to database only (will show in Notification Activity)");

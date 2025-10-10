@@ -1122,7 +1122,4 @@ public class AlertActivity extends AppCompatActivity {
         }
     }
 
-
-
-
 }
