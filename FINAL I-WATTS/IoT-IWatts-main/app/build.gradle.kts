@@ -5,7 +5,7 @@ plugins {
 
 android {
     namespace = "com.example.sampleiwatts"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.example.sampleiwatts"
@@ -51,6 +51,9 @@ dependencies {
     implementation(libs.firebase.database)
     implementation(libs.navigation.fragment)
     implementation(libs.navigation.ui)
+    implementation("androidx.appcompat:appcompat:1.7.1")
+    implementation("androidx.activity:activity:1.11.0")
+    implementation("androidx.constraintlayout:constraintlayout:2.2.1")
     testImplementation(libs.junit)
     androidTestImplementation(libs.ext.junit)
     androidTestImplementation(libs.espresso.core)

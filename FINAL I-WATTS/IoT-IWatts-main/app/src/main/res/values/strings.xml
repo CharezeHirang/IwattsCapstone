@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">I-WATTS-FirstDraft</string>
+    <string name="app_name">I-WATTS</string>
     <string name="text1">Your I-WATTS dashboard anywhere you go</string>
     <string name="text2">Before you start, connect your I-WATTS device to begin monitoring power in real-time.</string>
     <string name="text3">SEARCH DEVICE</string>
@@ -155,7 +155,7 @@
         vestibulum. Fusce dictum libero quis erat maximus, vitae volutpat diam dignissim.
     </string>
 
-<string name="about_description">
+    <string name="about_description">
     I-WATTS: An IoT-Based Smart Power Monitoring System was developed by a team of Bachelor of Science in Information Technology students from STI College Lipa.
     The project was created with the vision of helping households and communities gain better control over their electricity consumption through real-time monitoring,
     cost estimation, and smart alerts.&#10;&#10;
