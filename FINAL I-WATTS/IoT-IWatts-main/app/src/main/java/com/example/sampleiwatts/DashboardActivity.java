@@ -1497,9 +1497,20 @@ public class DashboardActivity extends AppCompatActivity {
                 try {
                     Date startingDate = dateFormatter.parse(startingDateString);
                     Date endingDate = dateFormatter.parse(endingDateString);
-
+                    
+                    // Get today's date
+                    Date today = new Date();
+                    
+                    // Use the lesser of today or ending date as the effective end date
+                    Date effectiveEndDate;
+                    if (today.before(endingDate)) {
+                        effectiveEndDate = today;
+                        Log.d("PeakWatts", "Using today as effective end date: " + dateFormatter.format(today));
+                    } else {
+                        effectiveEndDate = endingDate;
+                    }
                     Log.d("PeakWatts", "Parsed Starting Date: " + startingDate);
-                    Log.d("PeakWatts", "Parsed Ending Date: " + endingDate);
+                    Log.d("PeakWatts", "Effective Ending Date: " + dateFormatter.format(effectiveEndDate));
 
                     // Fetch hourly summaries to calculate peak watts from actual data
                     db.child("hourly_summaries").orderByKey().addListenerForSingleValueEvent(new ValueEventListener() {
@@ -1520,36 +1531,30 @@ public class DashboardActivity extends AppCompatActivity {
                                     continue;
                                 }
 
-                                // Check if the current date is within the range
+                                // Check if the current date is within the range (from starting date to effective end date)
                                 if ((currentDate.equals(startingDate) || currentDate.after(startingDate)) &&
-                                        (currentDate.equals(endingDate) || currentDate.before(endingDate))) {
+                                        (currentDate.equals(effectiveEndDate) || currentDate.before(effectiveEndDate))) {
 
                                     // Loop through hourly data to find peak
                                     for (DataSnapshot hourSnapshot : dateSnapshot.getChildren()) {
                                         String hourKey = hourSnapshot.getKey();
                                         
-                                        // Try to get total_watts (or watts/power field)
-                                        Double watts = hourSnapshot.child("total_watts").getValue(Double.class);
-                                        if (watts == null) {
-                                            watts = hourSnapshot.child("watts").getValue(Double.class);
-                                        }
-                                        if (watts == null) {
-                                            watts = hourSnapshot.child("power").getValue(Double.class);
-                                        }
+                                        // Get the peak_watts field which stores the highest power reading for that hour
+                                        Double peakWatts = hourSnapshot.child("peak_watts").getValue(Double.class);
                                         
-                                        // Calculate watts from kwh if watts not available
-                                        if (watts == null) {
-                                            Double kwh = hourSnapshot.child("total_kwh").getValue(Double.class);
-                                            if (kwh != null) {
-                                                watts = kwh * 1000; // Convert kWh to Wh (approximate)
-                                            }
+                                        // Fallback: try other fields if peak_watts not available
+                                        if (peakWatts == null) {
+                                            peakWatts = hourSnapshot.child("total_watts").getValue(Double.class);
+                                        }
+                                        if (peakWatts == null) {
+                                            peakWatts = hourSnapshot.child("avg_watts").getValue(Double.class);
                                         }
 
-                                        if (watts != null && watts > highestPeakWatts) {
-                                            highestPeakWatts = watts;
+                                        if (peakWatts != null && peakWatts > highestPeakWatts) {
+                                            highestPeakWatts = peakWatts;
                                             peakDate = dateKey;
                                             peakHour = hourKey;
-                                            Log.d("PeakWatts", "New peak found: " + watts + "W on " + dateKey + " at hour " + hourKey);
+                                            Log.d("PeakWatts", "New peak found: " + peakWatts + "W on " + dateKey + " at hour " + hourKey);
                                         }
                                     }
                                 }
@@ -1558,6 +1563,12 @@ public class DashboardActivity extends AppCompatActivity {
                             // Check if we found any peak data
                             if (highestPeakWatts > 0 && !peakHour.isEmpty() && !peakDate.isEmpty()) {
                                 try {
+                                    // Format the date from "yyyy-MM-dd" to "MMM d" (e.g., "Oct 9")
+                                    SimpleDateFormat inputDateFormat = new SimpleDateFormat("yyyy-MM-dd", Locale.getDefault());
+                                    SimpleDateFormat outputDateFormat = new SimpleDateFormat("MMM d", Locale.getDefault());
+                                    Date date = inputDateFormat.parse(peakDate);
+                                    String formattedDate = outputDateFormat.format(date);
+                                    
                                     // Format the hour (assuming format like "14" for hour or "14:00:00")
                                     String timeString = peakHour;
                                     SimpleDateFormat time12Format;
@@ -1588,11 +1599,11 @@ public class DashboardActivity extends AppCompatActivity {
 
                                     // Display the highest peak watts value
                                     String formattedPeakWatts = String.format("%.0f", highestPeakWatts);
-                                    Log.d("PeakWatts", "Highest Peak: " + formattedPeakWatts + "W on " + peakDate + " at " + timeString);
+                                    Log.d("PeakWatts", "Highest Peak: " + formattedPeakWatts + "W on " + formattedDate + " at " + timeString);
 
-                                    // Update UI
-                                    tvPeakValue.setText(formattedPeakWatts + " W");
-                                    tvPeakTime.setText(peakDate + " " + timeString);
+                                    // Update UI with formatted date and time (e.g., "Oct 9 at 6:00 AM")
+                                    tvPeakTime.setText(formattedDate + " at " + timeString);
+                                    tvPeakValue.setText(formattedPeakWatts + " watts");
                                     
                                 } catch (Exception e) {
                                     Log.e("PeakWatts", "Error formatting peak time: " + e.getMessage());
