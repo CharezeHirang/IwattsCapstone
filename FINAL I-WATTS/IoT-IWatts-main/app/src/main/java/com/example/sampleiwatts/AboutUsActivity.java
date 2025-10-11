@@ -1,6 +1,5 @@
 package com.example.sampleiwatts;
 
-import android.content.Intent;
 import android.os.Bundle;
 import android.widget.ImageView;
 
@@ -29,9 +28,7 @@ public class AboutUsActivity extends AppCompatActivity {
         // Initialize back button
         ImageView icBack = findViewById(R.id.ic_back);
         icBack.setOnClickListener(v -> {
-            // Navigate back to settings
-            Intent intent = new Intent(AboutUsActivity.this, SettingsActivity.class);
-            startActivity(intent);
+            // Navigate back to previous screen (Settings)
             finish();
         });
 
@@ -39,8 +36,7 @@ public class AboutUsActivity extends AppCompatActivity {
         getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
             @Override
             public void handleOnBackPressed() {
-                Intent intent = new Intent(AboutUsActivity.this, SettingsActivity.class);
-                startActivity(intent);
+                // Navigate back to previous screen (Settings)
                 finish();
             }
         });

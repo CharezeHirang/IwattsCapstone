@@ -51,8 +51,14 @@ public class TermsConditionsActivity extends AppCompatActivity {
 
     private void navigateBack() {
         boolean fromLogin = getIntent().getBooleanExtra("from_login", false);
-        Intent intent = new Intent(TermsConditionsActivity.this, fromLogin ? LoginActivity.class : SettingsActivity.class);
-        startActivity(intent);
-        finish();
+        if (fromLogin) {
+            // If opened from login, navigate back to LoginActivity
+            Intent intent = new Intent(TermsConditionsActivity.this, LoginActivity.class);
+            startActivity(intent);
+            finish();
+        } else {
+            // If opened from Settings, just finish to return to existing Settings
+            finish();
+        }
     }
 }
